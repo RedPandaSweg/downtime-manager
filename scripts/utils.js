@@ -23,6 +23,26 @@ export function toolMatches(item, requiredTool) {
 }
 export function hasRequiredTool(actor, requiredTool) { if (!requiredTool?.uuid && !requiredTool?.identifier && !requiredTool?.name) return true; return actor.items.some(item => toolMatches(item, requiredTool) && getSystemAdapter().isItemProficient(item)); }
 export function isRecipeItem(item) { return Boolean(item?.getFlag?.(MODULE_ID, FLAGS.RECIPE)?.enabled); }
+
+export function parseCategories(value) {
+  const entries = Array.isArray(value) ? value : String(value ?? "").split(",");
+  const categories = [];
+  const keys = new Set();
+  for (const entry of entries) {
+    const category = String(entry ?? "").trim();
+    const key = category.toLocaleLowerCase();
+    if (!category || keys.has(key)) continue;
+    keys.add(key);
+    categories.push(category);
+  }
+  return categories;
+}
+
+export function categoriesMatch(stationCategories, projectCategories) {
+  const available = new Set(parseCategories(stationCategories).map(category => category.toLocaleLowerCase()));
+  return parseCategories(projectCategories)
+    .some(category => available.has(category.toLocaleLowerCase()));
+}
 export function getItemPriceGp(item) {
   return round(getSystemAdapter().getItemPrice(item), 4);
 }
@@ -39,6 +59,7 @@ export function getStationData(actor) {
     stored,
     { inplace: false, recursive: true }
   );
+  data.categories = parseCategories(data.categories);
 
   // Read existing station data without persisting a migration.
   const existingChecks = stored.working?.allowedChecks?.length
@@ -118,6 +139,7 @@ export function recipeData(item, { sourceUuid: explicitUuid = "" } = {}) {
       : [];
     return {
       ...data,
+      categories: parseCategories(data.categories),
       enabled: data.enabled !== false,
       isCustom: true,
       itemPrice,
@@ -138,7 +160,7 @@ export function recipeData(item, { sourceUuid: explicitUuid = "" } = {}) {
         ? data.rewards
         : existingResultReward,
       completionCosts: Array.isArray(data.completionCosts) ? data.completionCosts : [],
-      allowedChecks: [],
+      allowedChecks: normalizeChecks(data.allowedChecks),
       rollTable: Array.isArray(data.rollTable)
         ? data.rollTable.map(row => ({
           ...row,
@@ -165,6 +187,7 @@ export function recipeData(item, { sourceUuid: explicitUuid = "" } = {}) {
     goldCost: round(price * 0.5, 4),
     ingredients: [],
     description: item?.system?.description?.value ?? "",
+    categories: [],
     repeatable: true,
     allowedChecks: [],
     requiredTools: [],

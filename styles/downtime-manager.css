@@ -92,7 +92,10 @@
 .downtime-manager .natural-row { background: color-mix(in srgb, var(--color-bg-option, transparent) 55%, transparent); border-radius: 4px; }
 .downtime-manager .natural-result-label { text-align: center; }
 .downtime-manager .disabled-natural-row .natural-result-label { text-decoration: line-through; opacity: .55; }
-.downtime-manager .tier-row { grid-template-columns: 75px 75px 75px 75px auto; }
+.downtime-manager .value-tier-list { overflow-x: auto; }
+.downtime-manager .tier-row { grid-template-columns: repeat(6, 75px) auto; min-width: 590px; }
+.downtime-manager .tier-header { font-size: .75rem; font-weight: 700; line-height: 1.1; align-items: end; padding: .2rem 0 .4rem; }
+.downtime-manager .tier-header > span { overflow-wrap: anywhere; text-align: center; }
 .downtime-manager .value-fields { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 .downtime-manager .value-fields label { display: grid; grid-template-rows: 2.6em 30px; align-items: end; gap: .25rem; }
 .downtime-manager .value-fields label input { height: 30px; align-self: end; }

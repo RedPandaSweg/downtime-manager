@@ -4,7 +4,7 @@ import { GoldService } from "./gold-service.js";
 import { ResourceService } from "./resource-service.js";
 import { RewardService } from "./reward-service.js";
 import { StationEngine } from "./station-engine.js";
-import { getStationData, recipeData, round } from "./utils.js";
+import { categoriesMatch, getStationData, recipeData, round } from "./utils.js";
 import { getSystemAdapter } from "./system-adapter.js";
 
 export class ProjectService {
@@ -30,6 +30,12 @@ export class ProjectService {
 
   static async start(actor, stationActor, projectUuid, batchQuantity = 1) {
     const { item, definition } = await this.project(projectUuid);
+    const station = getStationData(stationActor);
+    const isPublic = station.recipes.includes(projectUuid);
+    const isPersonal = (item.actor ?? item.parent)?.uuid === actor.uuid;
+    if (!isPublic && (!isPersonal || !categoriesMatch(station.categories, definition.categories))) {
+      throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ProjectCategoryMismatch"));
+    }
     const states = this.get(actor);
     const existing = states.find(state =>
       state.stationUuid === stationActor.uuid && state.projectUuid === projectUuid
@@ -158,20 +164,26 @@ export class ProjectService {
       actorValue,
       actorSources: StationEngine.actorProgressSources(actor, check)
     });
+    const actorValueModifier = StationEngine.actorValueModifier(station, actorValue);
+    const rewardRow = {
+      ...row,
+      rewardAddition: Number(row.rewardAddition ?? 0) + actorValueModifier.rewardAddition,
+      rewardMultiplier: Number(row.rewardMultiplier ?? 1) * actorValueModifier.rewardMultiplier
+    };
     const nextProgress = round(Math.max(0, Number(state.progress) + calculation.progress), 6);
     const reachedTarget = nextProgress >= state.requiredProgress - 1e-9;
     const requiresCompletionCheck = reachedTarget && definition.completionCheck?.enabled === true;
     let completed = reachedTarget && !requiresCompletionCheck;
     let rewards = [];
     let rewardSummary = [];
-    const rewardAddition = Number(row.rewardAddition ?? 0);
-    const rewardMultiplier = Number(row.rewardMultiplier ?? 1);
+    const rewardAddition = rewardRow.rewardAddition;
+    const rewardMultiplier = rewardRow.rewardMultiplier;
     if (completed) {
       const rewardItems = (definition.rewards ?? []).map(reward => ({
         ...reward,
         quantity: StationEngine.calculateRewardQuantity(
           reward.quantity ?? 1,
-          row,
+          rewardRow,
           state.batches
         )
       }));
@@ -196,7 +208,7 @@ export class ProjectService {
     if (requiresCompletionCheck) {
       state.awaitingCompletionCheck = true;
       state.completionCheckFailed = false;
-      state.completionRow = foundry.utils.deepClone(row);
+      state.completionRow = foundry.utils.deepClone(rewardRow);
       delete state.lastCompletionCheck;
     }
     const actorValueBefore = RewardService.getStationValue(actor, stationActor, station);
@@ -212,7 +224,7 @@ export class ProjectService {
         ...reward,
         quantity: StationEngine.calculateRewardQuantity(
           reward.quantity ?? 1,
-          row,
+          rewardRow,
           state.batches
         )
       }));

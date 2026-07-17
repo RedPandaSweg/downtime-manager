@@ -4,6 +4,21 @@ import { round } from "./utils.js";
 const EPSILON = 1e-9;
 
 export class StationEngine {
+  static normalizeValueTiers(tiers) {
+    const normalized = (Array.isArray(tiers) ? tiers : []).map(tier => ({ ...tier }));
+    const minimums = [...new Set(normalized
+      .map(tier => Number(tier.minimum))
+      .filter(Number.isFinite))]
+      .sort((a, b) => a - b);
+
+    for (const tier of normalized) {
+      const minimum = Number(tier.minimum);
+      const nextMinimum = minimums.find(candidate => candidate > minimum);
+      tier.maximum = nextMinimum === undefined ? null : nextMinimum - 1;
+    }
+    return normalized;
+  }
+
   static actorProgressSources(actor, check) {
     return getSystemAdapter().getActorProgressSources(actor, check);
   }
@@ -98,11 +113,10 @@ export class StationEngine {
 
   static actorValueModifier(station, value) {
     if (!station.actorValue?.enabled) {
-      return { addition: 0, multiplier: 1 };
+      return { addition: 0, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1 };
     }
-    const tiers = Array.isArray(station.actorValue?.tiers)
-      ? station.actorValue.tiers
-      : [];
+    const tiers = this.normalizeValueTiers(station.actorValue?.tiers)
+      .sort((a, b) => Number(a.minimum) - Number(b.minimum));
     const tier = tiers.find(entry => {
       const minimum = Number(entry.minimum ?? -Infinity);
       const maximum = entry.maximum === null || entry.maximum === ""
@@ -112,7 +126,9 @@ export class StationEngine {
     });
     return {
       addition: Number(tier?.addition ?? 0),
-      multiplier: Number(tier?.multiplier ?? 1)
+      multiplier: Number(tier?.multiplier ?? 1),
+      rewardAddition: Number(tier?.rewardAddition ?? 0),
+      rewardMultiplier: Number(tier?.rewardMultiplier ?? 1)
     };
   }
 

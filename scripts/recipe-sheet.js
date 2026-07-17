@@ -1,6 +1,6 @@
 import { FLAGS, MODULE_ID, SETTINGS } from "./constants.js";
 import { getSystemAdapter } from "./system-adapter.js";
-import { defaultRecipeData, defaultStationData, itemIdentifier, recipeData } from "./utils.js";
+import { defaultRecipeData, defaultStationData, itemIdentifier, parseCategories, recipeData } from "./utils.js";
 import { StationEngine } from "./station-engine.js";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
@@ -24,6 +24,7 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
       addRollRow: ProjectSheet.#addRollRow,
       removeRollRow: ProjectSheet.#removeRollRow,
       toggleNaturalRow: ProjectSheet.#toggleNaturalRow,
+      toggleChecks: ProjectSheet.#toggleChecks,
       resetRollTable: ProjectSheet.#resetRollTable,
       clearRollTable: ProjectSheet.#clearRollTable,
       discardDraft: ProjectSheet.#discardDraft
@@ -54,9 +55,23 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
       game.settings.get(MODULE_ID, SETTINGS.DEFAULT_COST_ITEM_UUID) ?? ""
     ).trim();
     const defaultCostItem = defaultCostUuid ? await fromUuid(defaultCostUuid) : null;
+    const selectedChecks = new Set((project.allowedChecks ?? []).map(StationEngine.checkId));
+    const checkGroups = ["ability", "skill", "tool"].map(type => ({
+      type,
+      label: game.i18n.localize(`DOWNTIME_MANAGER.Checks.Groups.${type}`),
+      checks: getSystemAdapter().getCheckDefinitions()
+        .filter(check => check.type === type)
+        .map(check => ({
+          ...check,
+          id: StationEngine.checkId(check),
+          label: check.localized ? check.label : game.i18n.localize(check.label),
+          selected: selectedChecks.has(StationEngine.checkId(check))
+        }))
+    })).filter(group => group.checks.length);
     return {
       ...context,
       project,
+      categoriesText: parseCategories(project.categories).join(", "),
       itemName: this._creationDraft?.name ?? this.item.name,
       itemImg: this._creationDraft?.img ?? this.item.img,
       creationDraft: Boolean(this._creationDraft),
@@ -64,6 +79,7 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
         ? { name: defaultCostItem.name, img: defaultCostItem.img }
         : null,
       supportsChecks: getSystemAdapter().capabilities.checks,
+      checkGroups,
       rollTableConfigured: project.rollTable.length > 0,
       requiredTools: await hydrate(project.requiredTools),
       ingredients: await hydrate(project.ingredients),
@@ -120,6 +136,7 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
     const checked = name => Boolean(this.element.querySelector(`[name="${name}"]`)?.checked);
     project.enabled = true;
     project.description = String(value("description") ?? "");
+    project.categories = parseCategories(value("categories"));
     project.requiredProgress = Math.max(0.000001, numberOr(value("requiredProgress"), 1));
     project.repeatable = checked("repeatable");
     project.completionCheck = {
@@ -127,7 +144,13 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
       dc: Math.max(0, numberOr(value("completionCheck.dc"), 10)),
       retryDowntime: Math.max(0, numberOr(value("completionCheck.retryDowntime"), 1))
     };
-    project.allowedChecks = [];
+    project.allowedChecks = Array.from(
+      this.element.querySelectorAll('[name="allowedChecks"]:checked'),
+      input => {
+        const [type, key] = input.value.split(":");
+        return { type, key };
+      }
+    );
     project.rollTable = (project.rollTable ?? []).map((row, index) => ({
       id: row.id ?? foundry.utils.randomID(),
       enabled: row.natural1 || row.natural20
@@ -321,6 +344,16 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
     const row = project.rollTable[Number(target.dataset.index)];
     if (row?.natural1 || row?.natural20) row.enabled = row.enabled === false;
     await this.#saveDraft(project);
+  }
+
+  static #toggleChecks(event, target) {
+    const type = target.dataset.checkType;
+    const selector = type === "all"
+      ? 'input[name="allowedChecks"]'
+      : `input[name="allowedChecks"][value^="${type}:"]`;
+    const checks = Array.from(this.element.querySelectorAll(selector));
+    const selectAll = checks.some(input => !input.checked);
+    for (const input of checks) input.checked = selectAll;
   }
 
   static #discardDraft() { this.close(); }

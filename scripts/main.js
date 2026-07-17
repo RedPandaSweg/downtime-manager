@@ -258,19 +258,31 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
 });
 
 Hooks.on("getSceneControlButtons", controls => {
-  if (!game.user.isGM || !controls.tokens?.tools) return;
-  controls.tokens.tools["downtime-dashboard"] = {
-    name: "downtime-dashboard",
-    title: "DOWNTIME_MANAGER.Dashboard.Title",
+  if (!game.user.isGM) return;
+
+  controls.downtimeManager = {
+    name: "downtimeManager",
+    order: 999,
+    title: "DOWNTIME_MANAGER.Controls.Title",
     icon: "fa-solid fa-hourglass-half",
-    button: true,
-    onChange: openDashboard
-  };
-  controls.tokens.tools["downtime-session"] = {
-    name: "downtime-session",
-    title: "DOWNTIME_MANAGER.Session.Title",
-    icon: "fa-solid fa-campground",
-    button: true,
-    onChange: openSessionManager
+    tools: {
+      dashboard: {
+        name: "dashboard",
+        order: 1,
+        title: "DOWNTIME_MANAGER.Controls.OpenDashboard",
+        icon: "fa-solid fa-chart-simple",
+        button: true,
+        onChange: openDashboard
+      },
+      session: {
+        name: "session",
+        order: 2,
+        title: "DOWNTIME_MANAGER.Controls.OpenSessionManager",
+        icon: "fa-solid fa-campground",
+        button: true,
+        onChange: openSessionManager
+      }
+    },
+    activeTool: null
   };
 });

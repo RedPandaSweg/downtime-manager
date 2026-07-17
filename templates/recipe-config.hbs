@@ -2,7 +2,26 @@
   <details class="sc-config-section" data-section="general" open><summary title="{{localize 'DOWNTIME_MANAGER.Tooltips.Project.General'}}">{{localize "DOWNTIME_MANAGER.Project.General"}}</summary><fieldset>
     <div class="sc-project-identity"><button type="button" class="sc-project-image-picker" data-action="chooseImage" title="{{localize 'DOWNTIME_MANAGER.Project.ChooseImage'}}"><img src="{{itemImg}}" alt=""></button><input type="hidden" name="img" value="{{itemImg}}"><div class="form-group stacked sc-project-name"><label>{{localize "DOWNTIME_MANAGER.Project.Name"}}</label><input type="text" name="name" value="{{itemName}}"></div><div class="form-group stacked sc-project-required-progress" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Project.RequiredProgress'}}"><label>{{localize "DOWNTIME_MANAGER.Project.RequiredProgress"}}</label><input type="number" name="requiredProgress" value="{{project.requiredProgress}}" min="0.000001" step="any"></div><label class="checkbox sc-checkbox-control" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Project.Repeatable'}}"><input type="checkbox" name="repeatable" {{checked project.repeatable}}> {{localize "DOWNTIME_MANAGER.Project.Repeatable"}}</label></div>
     <div class="form-group stacked" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Project.Description'}}"><label>{{localize "DOWNTIME_MANAGER.Project.Description"}}</label><textarea name="description">{{project.description}}</textarea></div>
+    <div class="form-group stacked" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Project.Categories'}}"><label>{{localize "DOWNTIME_MANAGER.Project.Categories"}}</label><input type="text" name="categories" value="{{categoriesText}}" placeholder="crafting, research, training"><p class="notes">{{localize "DOWNTIME_MANAGER.Project.CategoriesHint"}}</p></div>
   </fieldset></details>
+
+  {{#if supportsChecks}}<details class="sc-config-section" data-section="checks" data-check-options open><summary title="{{localize 'DOWNTIME_MANAGER.Tooltips.Project.AllowedChecks'}}">{{localize "DOWNTIME_MANAGER.Project.AllowedChecks"}}</summary><fieldset>
+    <p class="notes">{{localize "DOWNTIME_MANAGER.Project.AllowedChecksHint"}}</p>
+    <div class="sc-section-actions">
+      <button type="button" data-action="toggleChecks" data-check-type="skill" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Actions.ToggleSkills'}}"><i class="fa-solid fa-list-check"></i> {{localize "DOWNTIME_MANAGER.Actions.ToggleSkillChecks"}}</button>
+      <button type="button" data-action="toggleChecks" data-check-type="ability" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Actions.ToggleAbilities'}}">{{localize "DOWNTIME_MANAGER.Actions.ToggleAbilityChecks"}}</button>
+      <button type="button" data-action="toggleChecks" data-check-type="tool" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Actions.ToggleTools'}}">{{localize "DOWNTIME_MANAGER.Actions.ToggleToolChecks"}}</button>
+      <button type="button" data-action="toggleChecks" data-check-type="all" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Actions.ToggleAllChecks'}}">{{localize "DOWNTIME_MANAGER.Actions.ToggleAllChecks"}}</button>
+    </div>
+    {{#each checkGroups}}
+      <section class="sc-check-group" data-check-group="{{type}}">
+        <h4>{{label}}</h4>
+        <div class="sc-check-grid">{{#each checks}}
+          <label class="checkbox"><input type="checkbox" name="allowedChecks" value="{{id}}" {{checked selected}}> {{label}}</label>
+        {{/each}}</div>
+      </section>
+    {{/each}}
+  </fieldset></details>{{/if}}
 
   {{#if supportsChecks}}<details class="sc-config-section" data-section="roll-table" {{#if rollTableConfigured}}open{{/if}}><summary>{{localize "DOWNTIME_MANAGER.Project.RollTable"}}</summary><fieldset>
     <div class="sc-section-actions"><button type="button" data-action="resetRollTable"><i class="fa-solid fa-rotate-left"></i> {{localize "DOWNTIME_MANAGER.Actions.LoadDefaults"}}</button>{{#if rollTableConfigured}}<button type="button" data-action="clearRollTable"><i class="fa-solid fa-link"></i> {{localize "DOWNTIME_MANAGER.Project.UseStationRollTable"}}</button><button type="button" data-action="addRollRow"><i class="fa-solid fa-plus"></i></button>{{/if}}</div>

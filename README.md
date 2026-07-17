@@ -39,7 +39,7 @@ Game Masters can build reusable downtime stations, define projects with costs an
 Install the latest release in Foundry using this manifest URL:
 
 ```text
-https://github.com/RedPandaSweg/downtime-manager/releases/latest/download/module.json
+https://raw.githubusercontent.com/RedPandaSweg/downtime-manager/main/module.json
 ```
 
 For a manual installation:
@@ -89,7 +89,7 @@ Double-clicking a station token opens the station interface instead of the norma
 
 ## Projects
 
-Downtime projects are Items carrying the `flags.downtime-manager.recipe` configuration. World projects are managed in the Project Library and can be assigned to multiple stations. Embedded project Items on a character act as personal projects.
+Downtime projects are Items carrying the `flags.downtime-manager.recipe` configuration. World projects are managed in the Project Library and can be assigned to multiple stations. Embedded project Items on a character act as personal projects and require at least one category matching the current station. Publicly assigned projects are always allowed.
 
 Project configuration can include:
 
@@ -106,6 +106,8 @@ The first completion-check attempt is free. Failed attempts preserve progress an
 New projects and templates remain local editor drafts until **Save** is pressed. Closing the editor discards the draft without creating an Item.
 
 ## Downtime distribution
+
+GMs can open the **Downtime Manager** from its own control group at the bottom of the left canvas toolbar, directly below Journal Notes. The group provides access to the Downtime Overview and Session Manager without requiring a selected token.
 
 Downtime can enter a character's balance in four ways:
 

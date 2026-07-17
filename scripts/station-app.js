@@ -8,6 +8,7 @@ import { StationEngine } from "./station-engine.js";
 import { getSystemAdapter } from "./system-adapter.js";
 import {
   getActiveCrafter,
+  categoriesMatch,
   getStationData,
   hasRequiredTool,
   isRecipeItem,
@@ -147,6 +148,9 @@ export class StationApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const sources = new Map();
     for (const uuid of station.recipes) sources.set(uuid, { uuid, personal: false });
     for (const item of actor.items.filter(isRecipeItem)) {
+      if (sources.has(item.uuid)) continue;
+      const definition = recipeData(item, { sourceUuid: item.uuid });
+      if (!categoriesMatch(station.categories, definition.categories)) continue;
       sources.set(item.uuid, { uuid: item.uuid, item, personal: true });
     }
 

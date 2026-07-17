@@ -1,4 +1,4 @@
-import { FLAGS, MODULE_ID, PROJECT_TEMPLATES } from "./constants.js";
+import { DEFAULT_VALUE_TIERS, FLAGS, MODULE_ID, PROJECT_TEMPLATES } from "./constants.js";
 import { getSystemAdapter } from "./system-adapter.js";
 import { createRecipeFromBaseItem } from "./recipe-service.js";
 import { StationEngine } from "./station-engine.js";
@@ -8,6 +8,7 @@ import {
   getStationData,
   itemIdentifier,
   isRecipeItem,
+  parseCategories,
   recipeData
 } from "./utils.js";
 
@@ -42,7 +43,8 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
       moveTier: StationConfigApp.#moveTier,
       toggleChecks: StationConfigApp.#toggleChecks,
       resetRollTable: StationConfigApp.#resetRollTable,
-      resetValueTiers: StationConfigApp.#resetValueTiers
+      resetValueTiers: StationConfigApp.#resetValueTiers,
+      loadValueTierPreset: StationConfigApp.#loadValueTierPreset
     }
   };
 
@@ -57,6 +59,8 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
   async _prepareContext() {
     const station = getStationData(this.actor);
+    station.actorValue.tiers = StationEngine.normalizeValueTiers(station.actorValue.tiers);
+    station.categoriesText = station.categories.join(", ");
     const recipes = [];
     for (const uuid of station.recipes) {
       const item = await fromUuid(uuid);
@@ -211,6 +215,7 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
     station.enabled = checked("enabled");
     station.displayName = String(value("displayName") ?? "").trim();
     station.description = String(value("description") ?? "");
+    station.categories = parseCategories(value("categories"));
     station.baseProgress = numberOr(value("baseProgress"));
     station.requiresRoll = checked("requiresRoll");
     station.progressSources = {
@@ -264,13 +269,15 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
       minimum: value("actorValue.minimum") === "" ? null : numberOr(value("actorValue.minimum")),
       maximum: value("actorValue.maximum") === "" ? null : numberOr(value("actorValue.maximum")),
       completionChange: numberOr(value("actorValue.completionChange")),
-      tiers: station.actorValue.tiers.map((tier, index) => ({
+      tiers: StationEngine.normalizeValueTiers(station.actorValue.tiers.map((tier, index) => ({
         id: tier.id ?? foundry.utils.randomID(),
         minimum: numberOr(value(`actorValue.tiers.${index}.minimum`)),
         maximum: value(`actorValue.tiers.${index}.maximum`) === "" ? null : numberOr(value(`actorValue.tiers.${index}.maximum`)),
         addition: numberOr(value(`actorValue.tiers.${index}.addition`)),
-        multiplier: numberOr(value(`actorValue.tiers.${index}.multiplier`), 1)
-      }))
+        multiplier: numberOr(value(`actorValue.tiers.${index}.multiplier`), 1),
+        rewardAddition: numberOr(value(`actorValue.tiers.${index}.rewardAddition`)),
+        rewardMultiplier: numberOr(value(`actorValue.tiers.${index}.rewardMultiplier`), 1)
+      })))
     };
     delete station.type;
     delete station.working;
@@ -384,13 +391,16 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
   static async #addTier() {
     await this.#persistDraft(station => station.actorValue.tiers.push({
-      id: foundry.utils.randomID(), minimum: 0, maximum: null, addition: 0, multiplier: 1
+      id: foundry.utils.randomID(), minimum: 0, maximum: null,
+      addition: 0, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1
     }));
   }
   static async #removeTier(event, target) {
     await this.#persistDraft(station => station.actorValue.tiers.splice(Number(target.dataset.index), 1));
   }
-  static async #moveTier(event, target) { await this.#move("actorValue.tiers", target); }
+  static async #moveTier(event, target) {
+    await StationConfigApp.#move.call(this, "actorValue.tiers", target);
+  }
 
   static async #resetRollTable() {
     await this.#persistDraft(station => {
@@ -401,9 +411,13 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
 
   static async #resetValueTiers() {
+    await this.#persistDraft(station => { station.actorValue.tiers = []; });
+  }
+
+  static async #loadValueTierPreset() {
     await this.#persistDraft(station => {
       station.actorValue.tiers = foundry.utils.deepClone(
-        defaultStationData().actorValue.tiers
+        DEFAULT_VALUE_TIERS
       );
     });
   }
