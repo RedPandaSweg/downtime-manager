@@ -13,7 +13,7 @@
     }
   ],
   "url": "https://github.com/RedPandaSweg/downtime-manager",
-  "manifest": "https://github.com/RedPandaSweg/downtime-manager/releases/latest/download/module.json",
+  "manifest": "https://raw.githubusercontent.com/RedPandaSweg/downtime-manager/main/module.json",
   "download": "https://raw.githubusercontent.com/RedPandaSweg/downtime-manager/main/downtime-manager.zip",
   "bugs": "https://github.com/RedPandaSweg/downtime-manager/issues",
   "license": "MIT",
