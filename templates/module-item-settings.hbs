@@ -1,0 +1,18 @@
+<div class="sc-body sc-config-body">
+  {{#each fields}}
+    <fieldset>
+      <legend>{{label}}</legend>
+      <p class="notes">{{hint}}</p>
+      <div class="setting-item-drop" data-setting="{{setting}}" title="{{localize 'DOWNTIME_MANAGER.Settings.ItemDefaults.DropHint'}}">
+        {{#if item}}
+          <img src="{{item.img}}" alt="">
+          <strong>{{item.name}}</strong>
+        {{else}}
+          <span>{{localize "DOWNTIME_MANAGER.Settings.ItemDefaults.DropItem"}}</span>
+        {{/if}}
+      </div>
+      {{#if uuid}}<button type="button" data-action="clearItem" data-setting="{{setting}}"><i class="fa-solid fa-trash"></i> {{localize "DOWNTIME_MANAGER.Actions.Remove"}}</button>{{/if}}
+    </fieldset>
+  {{/each}}
+  <footer class="form-footer"><button type="submit"><i class="fa-solid fa-floppy-disk"></i> {{localize "DOWNTIME_MANAGER.Actions.Save"}}</button></footer>
+</div>

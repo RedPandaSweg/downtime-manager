@@ -1,0 +1,38 @@
+{
+  "id": "downtime-manager",
+  "title": "Downtime Manager",
+  "description": "A comprehensive downtime framework for Foundry VTT with configurable stations and projects, character progress, system-aware checks, crafting and rewards, completion checks, session management, passive and direct downtime distribution, reusable project templates, and GM oversight tools.",
+  "version": "0.7.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "authors": [
+    {
+      "name": "RedPandaSweg"
+    }
+  ],
+  "url": "https://github.com/RedPandaSweg/downtime-manager",
+  "manifest": "https://github.com/RedPandaSweg/downtime-manager/releases/latest/download/module.json",
+  "download": "https://raw.githubusercontent.com/RedPandaSweg/downtime-manager/main/downtime-manager.zip",
+  "bugs": "https://github.com/RedPandaSweg/downtime-manager/issues",
+  "license": "MIT",
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/downtime-manager.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    },
+    {
+      "lang": "de",
+      "name": "Deutsch",
+      "path": "lang/de.json"
+    }
+  ]
+}
