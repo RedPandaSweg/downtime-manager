@@ -39,7 +39,7 @@ Game Masters can build reusable downtime stations, define projects with costs an
 Install the latest release in Foundry using this manifest URL:
 
 ```text
-https://github.com/RedPandaSweg/downtime-manager/releases/latest/download/module.json
+https://raw.githubusercontent.com/RedPandaSweg/downtime-manager/main/module.json
 ```
 
 For a manual installation:
