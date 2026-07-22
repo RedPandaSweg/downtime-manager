@@ -2,7 +2,8 @@ import {
   DEFAULT_PROJECT_CONFIG,
   DEFAULT_STATION_CONFIG,
   FLAGS,
-  MODULE_ID
+  MODULE_ID,
+  SETTINGS
 } from "./constants.js";
 import { getSystemAdapter } from "./system-adapter.js";
 
@@ -36,6 +37,73 @@ export function parseCategories(value) {
     categories.push(category);
   }
   return categories;
+}
+export function configuredCategories() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.STATION_CATEGORIES);
+  const entries = Array.isArray(stored?.entries)
+    ? stored.entries
+    : Array.isArray(stored)
+      ? stored
+    : parseCategories(stored).map(value => ({ id: value, label: value }));
+  const result = [];
+  const ids = new Set();
+  for (const entry of entries) {
+    const id = String(entry?.id ?? entry ?? "").trim().toLowerCase();
+    const label = String(entry?.label ?? entry?.id ?? entry ?? "").trim();
+    if (!id || !label || ids.has(id)) continue;
+    ids.add(id);
+    result.push({ id, label });
+  }
+  return result;
+}
+export function categorySelectionView(selected = []) {
+  const categories = configuredCategories();
+  const selectedIds = new Set(parseCategories(selected).map(id => id.toLocaleLowerCase()));
+  return {
+    selected: categories.filter(category => selectedIds.has(category.id)),
+    options: categories.filter(category => !selectedIds.has(category.id))
+  };
+}
+export function addCategorySelection(element) {
+  const picker = element.closest(".sc-category-picker");
+  const select = picker?.querySelector("[data-category-select]");
+  const option = select?.selectedOptions?.[0];
+  if (!option?.value || picker.querySelector(`[data-category-id="${CSS.escape(option.value)}"]`)) return;
+  const chip = document.createElement("span");
+  chip.className = "sc-category-chip";
+  chip.dataset.categoryId = option.value;
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "categories";
+  input.value = option.value;
+  const label = document.createElement("span");
+  label.textContent = option.textContent;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.action = "removeCategorySelection";
+  button.title = game.i18n.localize("DOWNTIME_MANAGER.Actions.Remove");
+  button.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+  chip.append(input, label, button);
+  picker.querySelector("[data-category-chips]")?.append(chip);
+  const valueCategory = picker.closest("form")?.querySelector('[name="actorValue.category"]');
+  if (valueCategory && !Array.from(valueCategory.options).some(entry => entry.value === option.value)) {
+    valueCategory.add(new Option(option.textContent, option.value));
+  }
+  option.remove();
+  select.value = "";
+}
+export function removeCategorySelection(element) {
+  const chip = element.closest(".sc-category-chip");
+  const picker = chip?.closest(".sc-category-picker");
+  const select = picker?.querySelector("[data-category-select]");
+  if (!chip || !select) return;
+  const option = document.createElement("option");
+  option.value = chip.dataset.categoryId;
+  option.textContent = chip.querySelector(":scope > span")?.textContent ?? option.value;
+  select.append(option);
+  const valueCategory = picker.closest("form")?.querySelector('[name="actorValue.category"]');
+  valueCategory?.querySelector(`option[value="${CSS.escape(option.value)}"]`)?.remove();
+  chip.remove();
 }
 
 export function categoriesMatch(stationCategories, projectCategories) {
@@ -85,19 +153,14 @@ export function getStationData(actor) {
     data.progressSources.level.enabled = false;
     data.progressSources.proficiency.enabled = false;
   }
-  const storedRollTable = Array.isArray(stored.rollTable) && stored.rollTable.length
-    ? stored.rollTable
-    : foundry.utils.deepClone(DEFAULT_STATION_CONFIG.rollTable);
-  const defaults = foundry.utils.deepClone(DEFAULT_STATION_CONFIG.rollTable);
+  const storedRollTable = Array.isArray(stored.rollTable) ? stored.rollTable : [];
   const natural1 = storedRollTable.find(row => row.natural1);
   const natural20 = storedRollTable.find(row => row.natural20);
-  const defaultNatural1 = defaults.find(row => row.natural1);
-  const defaultNatural20 = defaults.find(row => row.natural20);
   const normalRows = storedRollTable.filter(row => !row.natural1 && !row.natural20);
   data.rollTable = [
-    { ...defaultNatural1, ...natural1, enabled: natural1?.enabled !== false, natural1: true, natural20: false },
+    ...(natural1 ? [{ ...natural1, enabled: natural1.enabled !== false, natural1: true, natural20: false }] : []),
     ...normalRows.map(row => ({ ...row, enabled: true, natural1: false, natural20: false })),
-    { ...defaultNatural20, ...natural20, enabled: natural20?.enabled !== false, natural1: false, natural20: true }
+    ...(natural20 ? [{ ...natural20, enabled: natural20.enabled !== false, natural1: false, natural20: true }] : [])
   ];
   data.actorValue = foundry.utils.mergeObject(
     foundry.utils.deepClone(DEFAULT_STATION_CONFIG.actorValue),
@@ -201,7 +264,6 @@ export function recipeData(item, { sourceUuid: explicitUuid = "" } = {}) {
 export function defaultStationData() {
   const data = foundry.utils.deepClone(DEFAULT_STATION_CONFIG);
   const adapter = getSystemAdapter();
-  data.allowedChecks = adapter.getCheckDefinitions().map(({ type, key }) => ({ type, key }));
   if (!adapter.capabilities.checks) data.requiresRoll = false;
   return data;
 }

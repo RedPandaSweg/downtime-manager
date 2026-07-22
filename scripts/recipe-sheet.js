@@ -1,6 +1,6 @@
-import { FLAGS, MODULE_ID, SETTINGS } from "./constants.js";
+import { FLAGS, MODULE_ID, ROLL_TABLE_PRESETS, SETTINGS } from "./constants.js";
 import { getSystemAdapter } from "./system-adapter.js";
-import { defaultRecipeData, defaultStationData, itemIdentifier, parseCategories, recipeData } from "./utils.js";
+import { addCategorySelection, categorySelectionView, defaultRecipeData, defaultStationData, itemIdentifier, parseCategories, recipeData, removeCategorySelection } from "./utils.js";
 import { StationEngine } from "./station-engine.js";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
@@ -27,7 +27,11 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
       toggleChecks: ProjectSheet.#toggleChecks,
       resetRollTable: ProjectSheet.#resetRollTable,
       clearRollTable: ProjectSheet.#clearRollTable,
-      discardDraft: ProjectSheet.#discardDraft
+      discardDraft: ProjectSheet.#discardDraft,
+      addCategorySelection: ProjectSheet.#addCategorySelection,
+      removeCategorySelection: ProjectSheet.#removeCategorySelection,
+      addCharacterReward: ProjectSheet.#addCharacterReward,
+      removeCharacterReward: ProjectSheet.#removeCharacterReward
     }
   };
 
@@ -56,6 +60,7 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
     ).trim();
     const defaultCostItem = defaultCostUuid ? await fromUuid(defaultCostUuid) : null;
     const selectedChecks = new Set((project.allowedChecks ?? []).map(StationEngine.checkId));
+    const categoryPicker = categorySelectionView(project.categories);
     const checkGroups = ["ability", "skill", "tool"].map(type => ({
       type,
       label: game.i18n.localize(`DOWNTIME_MANAGER.Checks.Groups.${type}`),
@@ -68,10 +73,22 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
           selected: selectedChecks.has(StationEngine.checkId(check))
         }))
     })).filter(group => group.checks.length);
+    const adapter = getSystemAdapter();
+    const rewardOptions = adapter.getCharacterRewardOptions();
+    const typeDefinitions = ["language", "skill", "tool", "weapon", "armor"]
+      .filter(type => (rewardOptions[type] ?? []).length)
+      .map(type => ({ type, label: game.i18n.localize(`DOWNTIME_MANAGER.Project.CharacterRewardTypes.${type}`) }));
+    const characterRewards = (project.characterRewards ?? []).map((reward, index) => ({
+      ...reward,
+      index,
+      supportsExpertise: ["skill", "tool"].includes(reward.type),
+      types: typeDefinitions.map(type => ({ ...type, selected: type.type === reward.type })),
+      options: (rewardOptions[reward.type] ?? []).map(option => ({ ...option, selected: option.key === reward.key }))
+    }));
     return {
       ...context,
       project,
-      categoriesText: parseCategories(project.categories).join(", "),
+      categoryPicker,
       itemName: this._creationDraft?.name ?? this.item.name,
       itemImg: this._creationDraft?.img ?? this.item.img,
       creationDraft: Boolean(this._creationDraft),
@@ -79,7 +96,15 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
         ? { name: defaultCostItem.name, img: defaultCostItem.img }
         : null,
       supportsChecks: getSystemAdapter().capabilities.checks,
+      supportsCharacterRewards: adapter.capabilities.characterRewards,
+      characterRewards,
       checkGroups,
+      rollTablePresets: ROLL_TABLE_PRESETS.map(preset => ({
+        id: preset.id,
+        labelKey: preset.labelKey,
+        descriptionKey: preset.descriptionKey,
+        selected: preset.id === project.rollTablePreset
+      })),
       rollTableConfigured: project.rollTable.length > 0,
       requiredTools: await hydrate(project.requiredTools),
       ingredients: await hydrate(project.ingredients),
@@ -94,6 +119,10 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
       zone.addEventListener("dragover", event => event.preventDefault());
       zone.addEventListener("drop", event => this.#dropEntry(event, zone.dataset.list));
     }
+    for (const select of this.element.querySelectorAll('[name^="characterRewards."][name$=".type"]')) {
+      select.addEventListener("change", event => this.#changeCharacterRewardType(event));
+    }
+    this.element.querySelector('[name="rollTablePreset"]')?.addEventListener("change", event => this.#applyRollTablePreset(event));
     this.#restoreView();
   }
 
@@ -135,10 +164,12 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
     const value = name => this.element.querySelector(`[name="${name}"]`)?.value;
     const checked = name => Boolean(this.element.querySelector(`[name="${name}"]`)?.checked);
     project.enabled = true;
+    project.rollTablePreset = String(value("rollTablePreset") ?? "").trim();
     project.description = String(value("description") ?? "");
-    project.categories = parseCategories(value("categories"));
+    project.categories = parseCategories(Array.from(this.element.querySelectorAll('[name="categories"]'), input => input.value));
     project.requiredProgress = Math.max(0.000001, numberOr(value("requiredProgress"), 1));
     project.repeatable = checked("repeatable");
+    project.collaborative = checked("collaborative");
     project.completionCheck = {
       enabled: checked("completionCheck.enabled"),
       dc: Math.max(0, numberOr(value("completionCheck.dc"), 10)),
@@ -174,7 +205,22 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
         quantity: Math.max(minimum, numberOr(value(`${list}.${index}.quantity`), 1))
       }));
     }
+    project.characterRewards = (project.characterRewards ?? []).map((reward, index) => ({
+      type: String(value(`characterRewards.${index}.type`) ?? reward.type ?? ""),
+      key: String(value(`characterRewards.${index}.key`) ?? reward.key ?? ""),
+      rank: ["skill", "tool"].includes(String(value(`characterRewards.${index}.type`) ?? reward.type))
+        ? Math.min(2, Math.max(1, numberOr(value(`characterRewards.${index}.rank`), 1)))
+        : 1
+    })).filter(reward => reward.type && reward.key);
     return project;
+  }
+
+  async #changeCharacterRewardType(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    const project = this.#readProject();
+    const options = getSystemAdapter().getCharacterRewardOptions()[event.currentTarget.value] ?? [];
+    project.characterRewards[index] = { type: event.currentTarget.value, key: options[0]?.key ?? "", rank: 1 };
+    await this.#saveDraft(project);
   }
 
   async #saveDraft(project) {
@@ -208,20 +254,28 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
       const quantities = rows.map(row => StationEngine.calculateRewardQuantity(0, row, 1));
       const minimum = Math.min(...quantities);
       const maximum = Math.max(...quantities);
-      const expected = Math.round(quantities.reduce((sum, quantity) => sum + quantity, 0) / quantities.length * 1e6) / 1e6;
-      return game.i18n.format("DOWNTIME_MANAGER.Project.RewardRollRange", { minimum, maximum, expected });
+      return game.i18n.format("DOWNTIME_MANAGER.Project.RewardRollRange", { minimum, maximum });
     };
     const itemList = (labelKey, entries, rewards = false) => {
       if (!entries?.length) return "";
       const items = entries.map(entry => {
         const name = escape(entry.name ?? entry.uuid);
-        const link = entry.uuid ? `@UUID[${entry.uuid}]{${name}}` : name;
         const rollSummary = rewards ? rewardRollSummary(entry) : null;
         return rollSummary
-          ? `<li>${link}: ${escape(rollSummary)}</li>`
-          : `<li>${link} × ${escape(entry.quantity ?? 1)}</li>`;
+          ? `<li>${name}: ${escape(rollSummary)}</li>`
+          : `<li>${name} × ${escape(entry.quantity ?? 1)}</li>`;
       }).join("");
       return `<h4>${escape(game.i18n.localize(labelKey))}</h4><ul>${items}</ul>`;
+    };
+    const characterOptions = getSystemAdapter().getCharacterRewardOptions();
+    const characterRewardList = () => {
+      if (!project.characterRewards?.length) return "";
+      const entries = project.characterRewards.map(reward => {
+        const label = characterOptions[reward.type]?.find(option => option.key === reward.key)?.label ?? reward.key;
+        const rank = reward.rank > 1 ? ` (${game.i18n.localize("DOWNTIME_MANAGER.Project.Expertise")})` : "";
+        return `<li>${escape(label)}${escape(rank)}</li>`;
+      }).join("");
+      return `<h4>${escape(game.i18n.localize("DOWNTIME_MANAGER.Project.CharacterRewards"))}</h4><ul>${entries}</ul>`;
     };
     const text = escape(project.description).replace(/\r?\n/g, "<br>");
     const repeatable = game.i18n.localize(
@@ -244,6 +298,7 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
       itemList("DOWNTIME_MANAGER.Project.RequiredItems", project.ingredients),
       itemList("DOWNTIME_MANAGER.Project.CompletionCosts", project.completionCosts),
       itemList("DOWNTIME_MANAGER.Project.Rewards", project.rewards, true),
+      characterRewardList(),
       `</section>`
     ];
     return parts.join("");
@@ -251,7 +306,7 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
 
   async #dropEntry(event, list) {
     event.preventDefault();
-    const data = TextEditor.getDragEventData(event);
+    const data = foundry.applications.ux.TextEditor.implementation.getDragEventData(event);
     const item = data.type === "Item" ? await Item.implementation.fromDropData(data) : null;
     if (!item?.uuid || !["requiredTools", "ingredients", "completionCosts", "rewards"].includes(list)) {
       return ui.notifications.warn(game.i18n.localize("DOWNTIME_MANAGER.Errors.DropItem"));
@@ -277,6 +332,28 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
     const project = this.#readProject();
     const list = target.dataset.list;
     project[list]?.splice(Number(target.dataset.index), 1);
+    await this.#saveDraft(project);
+  }
+
+  static #addCategorySelection(event, target) { addCategorySelection(target); }
+  static #removeCategorySelection(event, target) { removeCategorySelection(target); }
+
+  static async #addCharacterReward() {
+    const project = this.#readProject();
+    const options = getSystemAdapter().getCharacterRewardOptions();
+    const type = ["language", "skill", "tool", "weapon", "armor"].find(entry => options[entry]?.length);
+    if (!type) return ui.notifications.warn(game.i18n.localize("DOWNTIME_MANAGER.Errors.CharacterRewardsUnsupported"));
+    project.characterRewards ??= [];
+    project.characterRewards.push({ type, key: options[type][0].key, rank: 1 });
+    await this.#saveDraft(project);
+  }
+
+  static async #removeCharacterReward(event, target) {
+    event.preventDefault();
+    const project = this.#readProject();
+    const index = Number(target.closest?.("[data-index]")?.dataset.index ?? target.dataset.index);
+    if (!Number.isInteger(index) || index < 0) return;
+    project.characterRewards?.splice(index, 1);
     await this.#saveDraft(project);
   }
 
@@ -320,12 +397,22 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
 
   static async #resetRollTable() {
     const project = this.#readProject();
-    project.rollTable = foundry.utils.deepClone(defaultStationData().rollTable);
+    const preset = ROLL_TABLE_PRESETS.find(entry => entry.id === String(this.element.querySelector('[name="rollTablePreset"]')?.value ?? "").trim());
+    project.rollTable = preset?.rollTable ? foundry.utils.deepClone(preset.rollTable) : [];
+    project.rollTablePreset = preset?.id ?? "";
+    await this.#saveDraft(project);
+  }
+  async #applyRollTablePreset(event) {
+    const project = this.#readProject();
+    const preset = ROLL_TABLE_PRESETS.find(entry => entry.id === String(event.currentTarget?.value ?? "").trim());
+    project.rollTablePreset = preset?.id ?? "";
+    project.rollTable = preset?.rollTable ? foundry.utils.deepClone(preset.rollTable) : [];
     await this.#saveDraft(project);
   }
   static async #clearRollTable() {
     const project = this.#readProject();
     project.rollTable = [];
+    project.rollTablePreset = "";
     await this.#saveDraft(project);
   }
   static async #addRollRow() {
@@ -361,7 +448,7 @@ export class ProjectSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
   static async #submit() {
     this.#captureView();
     const project = this.#readProject();
-    if (!project.rewards.length) {
+    if (!project.rewards.length && !project.characterRewards.length) {
       return ui.notifications.error(game.i18n.localize("DOWNTIME_MANAGER.Errors.RewardRequired"));
     }
     if (project.rollTable.length && StationEngine.validateRollTable(project.rollTable).length) {

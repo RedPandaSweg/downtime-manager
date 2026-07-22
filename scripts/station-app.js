@@ -5,6 +5,8 @@ import { ResourceService } from "./resource-service.js";
 import { RewardService } from "./reward-service.js";
 import { StationConfigApp } from "./station-config-app.js";
 import { StationEngine } from "./station-engine.js";
+import { SharedProjectService } from "./shared-project-service.js";
+import { sharedProjectAction } from "./shared-project-socket.js";
 import { getSystemAdapter } from "./system-adapter.js";
 import {
   getActiveCrafter,
@@ -83,6 +85,7 @@ function lastResultView(result, actorValueEnabled, actorValueLabel, showRewardSu
     showRewardSummary
   };
 }
+function sharedPayload(app, target, actor) { return { stationUuid: app.stationActor.uuid, projectUuid: target.dataset.uuid, actorUuid: actor.uuid }; }
 
 export class StationApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
@@ -92,11 +95,18 @@ export class StationApp extends HandlebarsApplicationMixin(ApplicationV2) {
     window: { title: "DOWNTIME_MANAGER.Station.Title", resizable: true },
     actions: {
       start: StationApp.#start,
-      deactivate: StationApp.#deactivate,
+      cancel: StationApp.#cancel,
       invest: StationApp.#invest,
       roll: StationApp.#roll,
       completionRoll: StationApp.#completionRoll,
-      configure: StationApp.#configure
+      configure: StationApp.#configure,
+      sharedStart: StationApp.#sharedStart,
+      sharedJoin: StationApp.#sharedJoin,
+      sharedLeave: StationApp.#sharedLeave,
+      sharedCancel: StationApp.#sharedCancel,
+      sharedInvest: StationApp.#sharedInvest,
+      sharedRoll: StationApp.#sharedRoll,
+      sharedCompletionRoll: StationApp.#sharedCompletionRoll
     }
   };
 
@@ -159,23 +169,37 @@ export class StationApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const item = source.item ?? await fromUuid(source.uuid);
       if (!item || item.documentName !== "Item") continue;
       const definition = recipeData(item, { sourceUuid: source.uuid });
-      const description = await TextEditor.enrichHTML(
+      const description = await foundry.applications.ux.TextEditor.implementation.enrichHTML(
         String(definition.description ?? ""),
         { async: true, secrets: item.isOwner, relativeTo: item }
       );
       const state = ProjectService.findState(actor, this.stationActor, source.uuid);
+      const sharedState = definition.collaborative ? SharedProjectService.find(this.stationActor, source.uuid) : null;
+      const sharedJoined = Boolean(sharedState?.participantUuids?.includes(actor.uuid));
+      const sharedParticipants = [];
+      for (const uuid of sharedState?.participantUuids ?? []) {
+        const participant = await fromUuid(uuid);
+        sharedParticipants.push({ uuid, name: participant?.name ?? uuid, leader: uuid === sharedState.leaderUuid, contribution: sharedState.contributions?.[uuid] ?? { downtime: 0, progress: 0 } });
+      }
       const checks = StationEngine.checkDefinitions(
         StationEngine.availableChecks(station, definition)
       );
       const checkSelectionRequired = Boolean(station.progressSources?.checkProficiency?.enabled);
       const stationToolOk = hasRequiredTool(actor, station.requiredTool);
       const projectToolsOk = (definition.requiredTools ?? []).every(tool => hasRequiredTool(actor, tool));
-      const startItemsOk = ResourceService.has(actor, definition.ingredients ?? []);
+      const startItemsOk = await ResourceService.has(actor, definition.ingredients ?? []);
       const startGoldOk = !adapter.capabilities.currency || GoldService.getGold(actor) + 1e-9 >= Number(definition.goldCost ?? 0);
+      const projectCurrencyCost = adapter.capabilities.currency
+        ? await ResourceService.currencyCost(definition.ingredients ?? [])
+        : 0;
+      const displayedGoldCost = round(Number(definition.goldCost ?? 0) + projectCurrencyCost, 4);
       const progress = Number(state?.progress ?? 0);
       const requiredProgress = Number(state?.requiredProgress ?? definition.requiredProgress);
       const maxInvestment = state
         ? StationEngine.maxInvestment(station, state, DowntimeService.get(actor))
+        : 0;
+      const sharedMaxInvestment = sharedState && sharedJoined
+        ? StationEngine.maxInvestment(station, sharedState, DowntimeService.get(actor))
         : 0;
       const active = Boolean(state && !state.completed && state.active !== false);
       const paused = Boolean(state && !state.completed && state.active === false);
@@ -184,10 +208,20 @@ export class StationApp extends HandlebarsApplicationMixin(ApplicationV2) {
         name: item.name,
         img: item.img,
         description,
-        goldCost: round(Number(definition.goldCost ?? 0), 4),
-        showGoldCost: adapter.capabilities.currency && !definition.isCustom,
+        goldCost: displayedGoldCost,
+        showGoldCost: adapter.capabilities.currency && displayedGoldCost > 0,
         personal: source.personal,
         repeatable: definition.repeatable,
+        collaborative: Boolean(definition.collaborative),
+        sharedState,
+        sharedJoined,
+        sharedLeader: sharedState?.leaderUuid === actor.uuid,
+        sharedCanRoll: sharedState?.lastContributorUuid === actor.uuid,
+        sharedParticipants,
+        sharedMaxInvestment,
+        sharedProgress: round(Number(sharedState?.progress ?? 0), 6),
+        sharedRequiredProgress: round(Number(sharedState?.requiredProgress ?? definition.requiredProgress), 6),
+        sharedPercent: Math.max(0, Math.min(100, Math.floor(Number(sharedState?.progress ?? 0) / Number(sharedState?.requiredProgress ?? definition.requiredProgress) * 100))),
         state,
         lastResult: lastResultView(
           state?.lastResult,
@@ -214,7 +248,7 @@ export class StationApp extends HandlebarsApplicationMixin(ApplicationV2) {
         requiresRoll: station.requiresRoll !== false,
         showCheckSelection: checkSelectionRequired,
         canStart: station.enabled && stationToolOk && projectToolsOk &&
-          Boolean(definition.rewards?.length) &&
+          Boolean(definition.rewards?.length || definition.characterRewards?.length) &&
           (paused || (startItemsOk && startGoldOk && (!state || (state.completed && definition.repeatable)))),
         canInvest: station.enabled && Boolean(active && !state.pendingRoll && !state.awaitingCompletionCheck && maxInvestment > 0 && (!checkSelectionRequired || checks.length)),
         canRoll: station.enabled && Boolean(active && state.pendingRoll && checks.length),
@@ -266,12 +300,21 @@ export class StationApp extends HandlebarsApplicationMixin(ApplicationV2) {
     } catch (error) { ui.notifications.error(error.message); }
   }
 
-  static async #deactivate(event, target) {
+  static async #cancel(event, target) {
     const actor = getActiveCrafter();
     if (!actor) return ui.notifications.error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ActorMissing"));
     try {
-      await ProjectService.deactivate(actor, this.stationActor, target.dataset.uuid);
-      ui.notifications.info(game.i18n.localize("DOWNTIME_MANAGER.Notifications.ProjectDeactivated"));
+      const { item } = await ProjectService.project(target.dataset.uuid);
+      const confirmed = await foundry.applications.api.DialogV2.confirm({
+        window: { title: game.i18n.localize("DOWNTIME_MANAGER.Dashboard.RemoveProject") },
+        content: `<p>${game.i18n.format("DOWNTIME_MANAGER.Dashboard.RemoveProjectConfirm", {
+          project: foundry.utils.escapeHTML(item.name || ""),
+          actor: foundry.utils.escapeHTML(actor.name || "")
+        })}</p>`
+      });
+      if (!confirmed) return;
+      await ProjectService.cancel(actor, this.stationActor, target.dataset.uuid);
+      ui.notifications.info(game.i18n.localize("DOWNTIME_MANAGER.Dashboard.ProjectRemoved"));
       this.render();
     } catch (error) { ui.notifications.error(error.message); }
   }
@@ -318,5 +361,42 @@ export class StationApp extends HandlebarsApplicationMixin(ApplicationV2) {
         : "DOWNTIME_MANAGER.Notifications.CompletionCheckFailed", { total: result.rolled.total, dc: result.dc }));
       this.render();
     } catch (error) { ui.notifications.error(error.message); }
+  }
+
+  static async #sharedStart(event, target) {
+    const actor = getActiveCrafter(); if (!actor) return;
+    try {
+      const batches = this.element.querySelector(`[data-shared-quantity-for="${CSS.escape(target.dataset.uuid)}"]`)?.value ?? 1;
+      await sharedProjectAction("start", { stationUuid: this.stationActor.uuid, projectUuid: target.dataset.uuid, leaderUuid: actor.uuid, batches });
+      ui.notifications.info(game.i18n.localize("DOWNTIME_MANAGER.Notifications.SharedProjectStarted")); this.render();
+    } catch (error) { ui.notifications.error(error.message); }
+  }
+  static async #sharedJoin(event, target) { const actor = getActiveCrafter(); try { await sharedProjectAction("join", sharedPayload(this, target, actor)); this.render(); } catch (error) { ui.notifications.error(error.message); } }
+  static async #sharedLeave(event, target) { const actor = getActiveCrafter(); try { await sharedProjectAction("leave", sharedPayload(this, target, actor)); this.render(); } catch (error) { ui.notifications.error(error.message); } }
+  static async #sharedCancel(event, target) {
+    const actor = getActiveCrafter();
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: game.i18n.localize("DOWNTIME_MANAGER.Project.CancelShared") },
+      content: `<p>${game.i18n.localize("DOWNTIME_MANAGER.Project.CancelSharedConfirm")}</p>`
+    });
+    if (!confirmed) return;
+    try { await sharedProjectAction("cancel", sharedPayload(this, target, actor)); this.render(); }
+    catch (error) { ui.notifications.error(error.message); }
+  }
+  static async #sharedInvest(event, target) {
+    const actor = getActiveCrafter();
+    try {
+      const amount = this.element.querySelector(`[data-shared-downtime-for="${CSS.escape(target.dataset.uuid)}"]`)?.value;
+      const select = this.element.querySelector(`[data-shared-check-for="${CSS.escape(target.dataset.uuid)}"]`); const [type, key] = String(select?.value ?? "").split(":");
+      await sharedProjectAction("invest", { ...sharedPayload(this, target, actor), amount, check: { type, key } }); this.render();
+    } catch (error) { ui.notifications.error(error.message); }
+  }
+  static async #sharedRoll(event, target) {
+    const actor = getActiveCrafter(); const select = this.element.querySelector(`[data-shared-check-for="${CSS.escape(target.dataset.uuid)}"]`); const [type, key] = String(select?.value ?? "").split(":");
+    try { const rolled = await StationEngine.roll(actor, { type, key }); if (!rolled) return; await sharedProjectAction("resolveRoll", { ...sharedPayload(this, target, actor), check: { type, key }, rolled: { total: rolled.total, natural: rolled.natural } }); this.render(); } catch (error) { ui.notifications.error(error.message); }
+  }
+  static async #sharedCompletionRoll(event, target) {
+    const actor = getActiveCrafter(); const select = this.element.querySelector(`[data-shared-completion-check-for="${CSS.escape(target.dataset.uuid)}"]`); const [type, key] = String(select?.value ?? "").split(":");
+    try { const rolled = await StationEngine.roll(actor, { type, key }); if (!rolled) return; await sharedProjectAction("completionRoll", { ...sharedPayload(this, target, actor), check: { type, key }, rolled: { total: rolled.total, natural: rolled.natural } }); this.render(); } catch (error) { ui.notifications.error(error.message); }
   }
 }

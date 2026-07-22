@@ -46,7 +46,7 @@ export class SessionRewardConfigApp extends HandlebarsApplicationMixin(Applicati
     const zone = event.target.closest("[data-item-zone]");
     if (!zone) return;
     event.preventDefault();
-    const data = TextEditor.getDragEventData(event);
+    const data = foundry.applications.ux.TextEditor.implementation.getDragEventData(event);
     const item = data.type === "Item" && data.uuid ? await fromUuid(data.uuid).catch(() => null) : null;
     if (!item) return ui.notifications.warn(game.i18n.localize("DOWNTIME_MANAGER.Session.Errors.ItemRequired"));
     const config = this.#read();

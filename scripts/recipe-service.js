@@ -26,6 +26,39 @@ async function getProjectFolder() {
   return folder;
 }
 
+export async function createRecipeDocumentFromTemplate(templateId, {
+  name = "",
+  categories = [],
+  presetProjectId = ""
+} = {}) {
+  if (presetProjectId) {
+    const existing = Array.from(game.items).find(item =>
+      item.getFlag?.(MODULE_ID, "preset")?.projectId === presetProjectId
+    );
+    if (existing) return existing;
+  }
+  const uuid = String(game.settings.get(MODULE_ID, SETTINGS.RECIPE_BASE_ITEM_UUID) ?? "").trim();
+  if (!uuid) throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ProjectBaseMissing"));
+  const baseItem = await fromUuid(uuid);
+  if (!baseItem || baseItem.documentName !== "Item") throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ProjectBaseInvalid"));
+  const template = PROJECT_TEMPLATES.find(entry => entry.id === templateId);
+  if (!template) throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ProjectTemplateMissing"));
+  const project = foundry.utils.mergeObject(defaultRecipeData(), template.config, { inplace: false, recursive: true });
+  project.categories = [...categories];
+  project.description = game.i18n.localize(template.descriptionKey);
+  const data = baseItem.toObject();
+  const folder = await getProjectFolder();
+  delete data._id;
+  data.name = name || game.i18n.localize(template.nameKey);
+  data.img = template.img ?? data.img;
+  data.folder = folder.id;
+  foundry.utils.setProperty(data, `flags.${MODULE_ID}.${FLAGS.RECIPE}`, project);
+  if (presetProjectId) foundry.utils.setProperty(data, `flags.${MODULE_ID}.preset`, { type: "project", projectId: presetProjectId, version: 1 });
+  const item = await Item.create(data, { renderSheet: false });
+  if (!item) throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ProjectCreateFailed"));
+  return item;
+}
+
 export function openRecipeEditor(item) {
   if (!item || item.documentName !== "Item") return;
   new ProjectSheet({document: item}).render(true);

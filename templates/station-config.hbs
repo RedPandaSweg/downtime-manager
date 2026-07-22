@@ -14,7 +14,7 @@
     <div class="form-group stacked" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Station.Description'}}"><label>{{localize "DOWNTIME_MANAGER.Station.Description"}}</label>
       <textarea name="description">{{station.description}}</textarea></div>
     <div class="form-group stacked" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Station.Categories'}}"><label>{{localize "DOWNTIME_MANAGER.Station.Categories"}}</label>
-      <input type="text" name="categories" value="{{station.categoriesText}}" placeholder="crafting, research, training"></div>
+      {{> "modules/downtime-manager/templates/partials/category-picker.hbs" selected=categoryPicker.selected options=categoryPicker.options}}<p class="notes">{{localize "DOWNTIME_MANAGER.Station.CategoriesHint"}}</p></div>
     <div class="sc-general-values">
       <div class="form-group" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Station.RollInterval'}}"><label>{{localize "DOWNTIME_MANAGER.Station.RollInterval"}}</label>
         <input type="number" name="rollInterval" value="{{station.rollInterval}}" min="0.000001" step="any"></div>
@@ -83,8 +83,20 @@
     <summary title="{{localize 'DOWNTIME_MANAGER.Tooltips.Station.RollTable'}}">{{localize "DOWNTIME_MANAGER.Station.RollTable"}}</summary>
     <fieldset>
     <div class="sc-section-actions">
-      <button type="button" data-action="resetRollTable" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Actions.ResetRollTable'}}"><i class="fa-solid fa-rotate-left"></i> {{localize "DOWNTIME_MANAGER.Actions.LoadDefaults"}}</button>
+      <button type="button" data-action="resetRollTable" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Actions.ResetRollTable'}}"><i class="fa-solid fa-rotate-left"></i> {{localize "DOWNTIME_MANAGER.Actions.ReloadRollTablePreset"}}</button>
       <button type="button" data-action="addRollRow" title="{{localize 'DOWNTIME_MANAGER.Tooltips.Actions.AddRollRow'}}"><i class="fa-solid fa-plus"></i></button></div>
+    {{#if rollTablePresets.length}}
+    <div class="form-group" title="{{localize 'DOWNTIME_MANAGER.Tooltips.RollTable.Preset'}}">
+      <label>{{localize "DOWNTIME_MANAGER.RollTable.Preset"}}</label>
+      <select name="rollTablePreset">
+        <option value="">{{localize "DOWNTIME_MANAGER.RollTable.PresetNone"}}</option>
+        {{#each rollTablePresets}}
+          <option value="{{id}}" {{#if selected}}selected{{/if}} title="{{localize descriptionKey}}">{{localize labelKey}}</option>
+        {{/each}}
+      </select>
+      <p class="notes">{{localize "DOWNTIME_MANAGER.RollTable.PresetHint"}}</p>
+    </div>
+    {{/if}}
     <p class="notes">{{localize "DOWNTIME_MANAGER.Station.RollTableHint"}}</p>
     <div class="sc-list roll-table-list">
       <div class="sc-grid-row roll-row roll-header" aria-hidden="true">
@@ -129,11 +141,13 @@
   </details>
 
   <details class="sc-config-section" data-section="actor-value">
-    <summary title="{{localize 'DOWNTIME_MANAGER.Tooltips.Station.ActorValue'}}">{{localize "DOWNTIME_MANAGER.Station.ActorValue"}}</summary>
+    <summary title="{{localize 'DOWNTIME_MANAGER.Tooltips.Station.ActorValue'}}">{{localize "DOWNTIME_MANAGER.Station.CharacterValue"}}</summary>
     <fieldset>
-    <label class="checkbox" title="{{localize 'DOWNTIME_MANAGER.Tooltips.ActorValue.Enabled'}}"><input type="checkbox" name="actorValue.enabled" {{checked station.actorValue.enabled}}> {{localize "DOWNTIME_MANAGER.Station.UseActorValue"}}</label>
+    <label class="checkbox" title="{{localize 'DOWNTIME_MANAGER.Tooltips.ActorValue.Enabled'}}"><input type="checkbox" name="actorValue.enabled" {{checked station.actorValue.enabled}}> {{localize "DOWNTIME_MANAGER.Station.UseCharacterValue"}}</label>
     <div data-actor-value-options {{#unless station.actorValue.enabled}}hidden{{/unless}}>
-    <div class="form-group" title="{{localize 'DOWNTIME_MANAGER.Tooltips.ActorValue.Key'}}"><label>{{localize "DOWNTIME_MANAGER.Station.ActorValueKey"}}</label><input type="text" name="actorValue.key" value="{{station.actorValue.key}}"></div>
+    <div class="form-group"><label>{{localize "DOWNTIME_MANAGER.Station.CharacterValueScope"}}</label><select name="actorValue.scope"><option value="station" {{#if (eq station.actorValue.scope "station")}}selected{{/if}}>{{localize "DOWNTIME_MANAGER.Station.CharacterValueScopeStation"}}</option><option value="category" {{#if (eq station.actorValue.scope "category")}}selected{{/if}}>{{localize "DOWNTIME_MANAGER.Station.CharacterValueScopeCategory"}}</option></select></div>
+    <div class="form-group" data-character-value-key title="{{localize 'DOWNTIME_MANAGER.Tooltips.ActorValue.Key'}}"><label>{{localize "DOWNTIME_MANAGER.Station.CharacterValueKey"}}</label><input type="text" name="actorValue.key" value="{{station.actorValue.key}}"></div>
+    <div class="form-group" data-character-value-category><label>{{localize "DOWNTIME_MANAGER.Station.CharacterValueCategory"}}</label><select name="actorValue.category"><option value=""></option>{{#each characterValueCategories}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></div>
     <div class="form-group" title="{{localize 'DOWNTIME_MANAGER.Tooltips.ActorValue.Label'}}"><label>{{localize "DOWNTIME_MANAGER.Common.Label"}}</label><input type="text" name="actorValue.label" value="{{station.actorValue.label}}"></div>
     <div class="sc-grid-row value-fields">
       <label title="{{localize 'DOWNTIME_MANAGER.Tooltips.ActorValue.Default'}}">{{localize "DOWNTIME_MANAGER.Common.Default"}} <input type="number" name="actorValue.defaultValue" value="{{station.actorValue.defaultValue}}" step="any"></label>

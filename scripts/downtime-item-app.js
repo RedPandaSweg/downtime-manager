@@ -53,7 +53,7 @@ export class DowntimeItemApp extends HandlebarsApplicationMixin(ApplicationV2) {
     event.preventDefault();
     if (!game.user.isGM) return;
     const amount = Number(this.element.querySelector('[name="amount"]')?.value);
-    if (!Number.isFinite(amount) || amount <= 0) return ui.notifications.warn(game.i18n.localize("DOWNTIME_MANAGER.DowntimeItem.Errors.Amount"));
+    if (!Number.isFinite(amount) || amount < 0) return ui.notifications.warn(game.i18n.localize("DOWNTIME_MANAGER.DowntimeItem.Errors.Amount"));
     await this.item.setFlag(MODULE_ID, FLAGS.DOWNTIME_ITEM, {
       enabled: true, amount,
       consume: Boolean(this.element.querySelector('[name="consume"]')?.checked),

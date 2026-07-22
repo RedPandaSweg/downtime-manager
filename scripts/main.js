@@ -1,13 +1,16 @@
-import { createDefaultSessionRewards, DEFAULT_PASSIVE_DOWNTIME, FLAGS, MODULE_ID, SETTINGS } from "./constants.js";
+import { createDefaultSessionRewards, createDefaultStationCategories, DEFAULT_PASSIVE_DOWNTIME, FLAGS, MODULE_ID, SETTINGS } from "./constants.js";
 import { StationApp } from "./station-app.js";
 import { StationConfigApp } from "./station-config-app.js";
 import { ModuleItemSettingsApp } from "./module-item-settings-app.js";
+import { PlayerActorFolderSettingsApp } from "./player-actor-folder-settings-app.js";
 import { HelpApp } from "./help-app.js";
 import { ProjectLibraryApp } from "./project-library-app.js";
 import { DowntimeDashboardApp } from "./dashboard-app.js";
 import { getSystemAdapter, registerSystemAdapter } from "./system-adapter.js";
 import { SessionApp } from "./session-app.js";
 import { DowntimeItemApp } from "./downtime-item-app.js";
+import { StationPresetApp } from "./station-preset-app.js";
+import { registerSharedProjectSocket } from "./shared-project-socket.js";
 import { downtimeItemData, DowntimeItemService } from "./downtime-item-service.js";
 import { addHeaderControl, defaultStationData, isRecipeItem, isStation } from "./utils.js";
 import {
@@ -105,6 +108,15 @@ Hooks.once("init", async () => {
 
   await loadTemplates();
 
+  game.settings.registerMenu(MODULE_ID, "help", {
+    name: "DOWNTIME_MANAGER.Help.SettingName",
+    label: "DOWNTIME_MANAGER.Help.SettingLabel",
+    hint: "DOWNTIME_MANAGER.Help.SettingHint",
+    icon: "fa-solid fa-circle-question",
+    type: HelpApp,
+    restricted: false
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.ACTIVE_SESSION, { scope: "world", config: false, type: Object, default: {} });
   game.settings.register(MODULE_ID, SETTINGS.SESSION_REWARDS, { scope: "world", config: false, type: Object, default: createDefaultSessionRewards(getSystemAdapter().getDefaultGoldItemUuid()) });
   game.settings.register(MODULE_ID, SETTINGS.SESSION_HISTORY_JOURNAL, { scope: "world", config: false, type: String, default: "" });
@@ -115,6 +127,25 @@ Hooks.once("init", async () => {
     config: true,
     type: Boolean,
     default: true
+  });
+  game.settings.register(MODULE_ID, SETTINGS.STATION_CATEGORIES, {
+    name: "DOWNTIME_MANAGER.Settings.StationCategories.Name",
+    hint: "DOWNTIME_MANAGER.Settings.StationCategories.Hint",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { entries: createDefaultStationCategories(getSystemAdapter().getCheckDefinitions().map(check => ({
+      ...check,
+      label: check.localized ? game.i18n.localize(check.label) : game.i18n.localize(check.label)
+    }))) }
+  });
+  game.settings.register(MODULE_ID, SETTINGS.PLAYER_ACTOR_FOLDERS, {
+    name: "DOWNTIME_MANAGER.Settings.PlayerActorFolders.Name",
+    hint: "DOWNTIME_MANAGER.Settings.PlayerActorFolders.Hint",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { folderId: "" }
   });
   game.settings.register(MODULE_ID, SETTINGS.PASSIVE_DOWNTIME, {
     scope: "world", config: false, type: Object,
@@ -143,21 +174,21 @@ Hooks.once("init", async () => {
   });
 
   game.settings.registerMenu(MODULE_ID, "itemDefaults", {
-    name: "DOWNTIME_MANAGER.Settings.ItemDefaults.Name",
-    label: "DOWNTIME_MANAGER.Settings.ItemDefaults.Label",
-    hint: "DOWNTIME_MANAGER.Settings.ItemDefaults.Hint",
+    name: "DOWNTIME_MANAGER.Settings.ModuleConfig.Name",
+    label: "DOWNTIME_MANAGER.Settings.ModuleConfig.Label",
+    hint: "DOWNTIME_MANAGER.Settings.ModuleConfig.Hint",
     icon: "fa-solid fa-box-open",
     type: ModuleItemSettingsApp,
     restricted: true
   });
 
-  game.settings.registerMenu(MODULE_ID, "help", {
-    name: "DOWNTIME_MANAGER.Help.SettingName",
-    label: "DOWNTIME_MANAGER.Help.SettingLabel",
-    hint: "DOWNTIME_MANAGER.Help.SettingHint",
-    icon: "fa-solid fa-circle-question",
-    type: HelpApp,
-    restricted: false
+  game.settings.registerMenu(MODULE_ID, "playerActorFolders", {
+    name: "DOWNTIME_MANAGER.Settings.PlayerActorFolders.SettingName",
+    label: "DOWNTIME_MANAGER.Settings.PlayerActorFolders.SettingLabel",
+    hint: "DOWNTIME_MANAGER.Settings.PlayerActorFolders.SettingHint",
+    icon: "fa-solid fa-folder-tree",
+    type: PlayerActorFolderSettingsApp,
+    restricted: true
   });
 
   game.settings.registerMenu(MODULE_ID, "projectLibrary", {
@@ -169,9 +200,35 @@ Hooks.once("init", async () => {
     restricted: true
   });
 
+  game.settings.registerMenu(MODULE_ID, "stationPresets", {
+    name: "DOWNTIME_MANAGER.StationPresets.SettingName",
+    label: "DOWNTIME_MANAGER.StationPresets.SettingLabel",
+    hint: "DOWNTIME_MANAGER.StationPresets.SettingHint",
+    icon: "fa-solid fa-shop",
+    type: StationPresetApp,
+    restricted: true
+  });
+
 });
 
-Hooks.once("ready", () => {
+Hooks.once("ready", async () => {
+  registerSharedProjectSocket();
+  const storedCategories = game.settings.get(MODULE_ID, SETTINGS.STATION_CATEGORIES);
+  if (!Array.isArray(storedCategories?.entries) || storedCategories.entries.some(category => !category || typeof category !== "object")) {
+    const checks = getSystemAdapter().getCheckDefinitions().map(check => ({
+      ...check,
+      label: check.localized ? check.label : game.i18n.localize(check.label)
+    }));
+    await game.settings.set(MODULE_ID, SETTINGS.STATION_CATEGORIES, { entries: createDefaultStationCategories(checks) });
+  } else if (storedCategories.entries.some(category => String(category.id).startsWith("tool:"))) {
+    const checks = getSystemAdapter().getCheckDefinitions();
+    const semantic = createDefaultStationCategories(checks);
+    const preserved = storedCategories.entries.filter(category => !String(category.id).startsWith("tool:"));
+    const ids = new Set(preserved.map(category => category.id));
+    await game.settings.set(MODULE_ID, SETTINGS.STATION_CATEGORIES, {
+      entries: [...preserved, ...semantic.filter(category => !ids.has(category.id))]
+    });
+  }
   getSystemAdapter().registerHooks({
     redeemDowntimeItem: (item, options) => DowntimeItemService.redeem(item, options)
   });
@@ -184,6 +241,7 @@ Hooks.once("ready", () => {
     openDashboard,
     openSessionManager,
     openProjectLibrary,
+    openStationPresets: () => game.user.isGM && new StationPresetApp().render(true),
     getSystemAdapter,
     registerSystemAdapter
   };
@@ -192,6 +250,7 @@ Hooks.once("ready", () => {
 async function loadTemplates() {
   return foundry.applications.handlebars.loadTemplates([
     "modules/downtime-manager/templates/partials/item-list.hbs",
+    "modules/downtime-manager/templates/partials/category-picker.hbs",
   ]);
 }
 

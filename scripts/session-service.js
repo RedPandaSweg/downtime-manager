@@ -23,7 +23,22 @@ export function monthKey(value = new Date()) {
 export function playerCharacters() {
   const preferred = new Set(["pc", "character", "player-character"]);
   const strict = game.actors.contents.filter(actor => preferred.has(actor.type));
+  const configured = game.settings.get(MODULE_ID, SETTINGS.PLAYER_ACTOR_FOLDERS) ?? {};
+  const selectedFolderId = String(configured.folderId ?? configured.folderIds?.[0] ?? "");
+  const isInSelectedFolder = actor => {
+    if (!selectedFolderId) return true;
+    let folder = actor.folder;
+    const visited = new Set();
+    while (folder && !visited.has(folder.id)) {
+      if (selectedFolderId === String(folder.id)) return true;
+      visited.add(folder.id);
+      const parent = folder.folder;
+      folder = typeof parent === "string" ? game.folders.get(parent) : parent;
+    }
+    return false;
+  };
   return (strict.length ? strict : game.actors.contents.filter(actor => actor.type !== "npc" && actor.hasPlayerOwner))
+    .filter(isInSelectedFolder)
     .sort((a, b) => String(a.name).localeCompare(String(b.name), game.i18n.lang));
 }
 

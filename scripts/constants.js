@@ -7,14 +7,18 @@ export const FLAGS = Object.freeze({
   DOWNTIME: "downtime",
   REPUTATION: "reputation",
   STATION_VALUES: "stationValues",
+  STATION_FOLDER: "stationFolder",
   PROJECT_FOLDER: "projectFolder",
   SESSION_PROGRESS: "sessionProgress",
-  DOWNTIME_ITEM: "downtimeItem"
+  DOWNTIME_ITEM: "downtimeItem",
+  SHARED_PROJECTS: "sharedProjects"
 });
 
 export const SETTINGS = Object.freeze({
   RECIPE_BASE_ITEM_UUID: "recipeBaseItemUuid",
   DEFAULT_COST_ITEM_UUID: "defaultCostItemUuid",
+  STATION_CATEGORIES: "stationCategories",
+  PLAYER_ACTOR_FOLDERS: "playerActorFolders",
   ACTIVE_SESSION: "activeSession",
   SESSION_REWARDS: "sessionRewards",
   SESSION_HISTORY_JOURNAL: "sessionHistoryJournal",
@@ -22,6 +26,41 @@ export const SETTINGS = Object.freeze({
   PASSIVE_DOWNTIME: "passiveDowntimeConfig",
   LAST_DIRECT_DOWNTIME_ALL: "lastDirectDowntimeAll"
 });
+
+export const DEFAULT_STATION_CATEGORIES = Object.freeze([
+  { id: "research", label: "Research" },
+  { id: "training", label: "Training" },
+  { id: "working", label: "Working" },
+  { id: "carousing", label: "Carousing" }
+]);
+
+const TOOL_ACTIVITY_CATEGORIES = Object.freeze([
+  { match: ["alchemist"], id: "alchemy", label: "Alchemy" },
+  { match: ["artist"], id: "artistry", label: "Artistry" },
+  { match: ["charlatan"], id: "deception", label: "Deception" },
+  { match: ["clothier"], id: "tailoring", label: "Tailoring" },
+  { match: ["construction"], id: "construction", label: "Construction" },
+  { match: ["gaming", "dice", "card"], id: "gaming", label: "Gaming" },
+  { match: ["smithing"], id: "smithing", label: "Smithing" },
+  { match: ["herbalist"], id: "herbalism", label: "Herbalism" },
+  { match: ["musicalinstrument", "bagpipes", "drum", "flute", "lute", "lyre", "horn"], id: "music", label: "Music" },
+  { match: ["navigator"], id: "navigation", label: "Navigation" },
+  { match: ["provisioner"], id: "cooking", label: "Cooking" },
+  { match: ["trapper"], id: "hunting", label: "Hunting" },
+  { match: ["thieves"], id: "thievery", label: "Thievery" },
+  { match: ["tinker"], id: "tinkering", label: "Tinkering" }
+]);
+
+export function createDefaultStationCategories(checks = []) {
+  const categories = DEFAULT_STATION_CATEGORIES.map(category => ({ ...category }));
+  for (const tool of checks.filter(check => check.type === "tool")) {
+    const key = String(tool.key ?? "").replace(/[^a-z]/gi, "").toLowerCase();
+    const activity = TOOL_ACTIVITY_CATEGORIES.find(category => category.match.some(part => key.includes(part.toLowerCase())));
+    if (!activity || categories.some(category => category.id === activity.id)) continue;
+    categories.push({ id: activity.id, label: activity.label });
+  }
+  return categories;
+}
 
 const sessionGold = level => {
   if (level <= 3) return 100;
@@ -61,7 +100,7 @@ export const DEFAULT_PASSIVE_DOWNTIME = Object.freeze({
 });
 
 export const COIN_IDENTIFIERS = Object.freeze(["pp", "gp", "sp", "cp"]);
-export const COIN_VALUE_CP = Object.freeze({pp: 1000, gp: 100, sp: 10, cp: 1});
+export const COIN_VALUE_CP = Object.freeze({ pp: 1000, gp: 100, sp: 10, cp: 1 });
 
 export const CHECK_DEFINITIONS = [
   {
@@ -205,14 +244,43 @@ export const DEFAULT_VALUE_TIERS = Object.freeze([
   { id: "default-value-250", minimum: 250, maximum: null, addition: 0, multiplier: 1, rewardAddition: 0, rewardMultiplier: 4 }
 ]);
 
+export const CRAFTING_ROLL_TABLE = Object.freeze([
+  { id: "crafting-natural-1", enabled: true, natural1: true, minimum: 1, maximum: 1, label: "Katastrophe!", addition: -20, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 },
+  { id: "crafting-1-5", minimum: 1, maximum: 5, label: "Pfusch!", addition: 0, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 },
+  { id: "crafting-6-10", minimum: 6, maximum: 10, label: "Mäßig.", addition: 10, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 },
+  { id: "crafting-11-15", minimum: 11, maximum: 15, label: "Routine.", addition: 25, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 },
+  { id: "crafting-16-20", minimum: 16, maximum: 20, label: "Gelungen!", addition: 50, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 },
+  { id: "crafting-21-25", minimum: 21, maximum: 25, label: "Erfolgreich!", addition: 75, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 },
+  { id: "crafting-26-30", minimum: 26, maximum: 30, label: "Außerordentlich!", addition: 100, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 },
+  { id: "crafting-31-plus", minimum: 31, maximum: null, label: "Meisterlich!", addition: 150, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 },
+  { id: "crafting-natural-20", enabled: true, natural20: true, minimum: 20, maximum: 20, label: "Legendär!", addition: 200, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: 0 }
+]);
+
+export const STANDARD_ROLL_TABLE = Object.freeze([
+  { id: "standard-natural-1", enabled: true, minimum: 1, maximum: 1, label: "Katastrophe!", addition: 0, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: -3, natural1: true, natural20: false },
+  { id: "standard-1-5", minimum: 1, maximum: 5, label: "Pfusch!", addition: 0, multiplier: 1, rewardAddition: 1, rewardMultiplier: 1, actorValueChange: -1, natural1: false, natural20: false },
+  { id: "standard-6-10", minimum: 6, maximum: 10, label: "Mäßig.", addition: 0, multiplier: 1, rewardAddition: 10, rewardMultiplier: 1, actorValueChange: 0, natural1: false, natural20: false },
+  { id: "standard-11-15", minimum: 11, maximum: 15, label: "Routine.", addition: 0, multiplier: 1, rewardAddition: 20, rewardMultiplier: 1, actorValueChange: 1, natural1: false, natural20: false },
+  { id: "standard-16-20", minimum: 16, maximum: 20, label: "Gelungen!", addition: 0, multiplier: 1, rewardAddition: 50, rewardMultiplier: 1, actorValueChange: 2, natural1: false, natural20: false },
+  { id: "standard-21-25", minimum: 21, maximum: 25, label: "Erfolgreich!", addition: 0, multiplier: 1, rewardAddition: 80, rewardMultiplier: 1, actorValueChange: 3, natural1: false, natural20: false },
+  { id: "standard-26-30", minimum: 26, maximum: 30, label: "Außerordentlich!", addition: 0, multiplier: 1, rewardAddition: 100, rewardMultiplier: 1, actorValueChange: 4, natural1: false, natural20: false },
+  { id: "standard-31-plus", minimum: 31, maximum: null, label: "Meisterlich!", addition: 0, multiplier: 1, rewardAddition: 150, rewardMultiplier: 1, actorValueChange: 5, natural1: false, natural20: false },
+  { id: "standard-natural-20", enabled: true, minimum: 20, maximum: 20, label: "Legendär!", addition: 0, multiplier: 1, rewardAddition: 200, rewardMultiplier: 1, actorValueChange: 10, natural1: false, natural20: true }
+]);
+
+export const ROLL_TABLE_PRESETS = Object.freeze([
+  { id: "crafting", labelKey: "DOWNTIME_MANAGER.RollTablePresets.Crafting.Name", descriptionKey: "DOWNTIME_MANAGER.RollTablePresets.Crafting.Description", rollTable: CRAFTING_ROLL_TABLE },
+  { id: "standard", labelKey: "DOWNTIME_MANAGER.RollTablePresets.Standard.Name", descriptionKey: "DOWNTIME_MANAGER.RollTablePresets.Standard.Description", rollTable: STANDARD_ROLL_TABLE }
+]);
+
 export const DEFAULT_STATION_CONFIG = Object.freeze({
   enabled: true,
   displayName: "",
   description: "",
   categories: [],
-  allowedChecks: CHECK_DEFINITIONS.map(({ type, key }) => ({ type, key })),
-  baseProgress: 1,
-  requiresRoll: true,
+  allowedChecks: [],
+  baseProgress: 0,
+  requiresRoll: false,
   rollInterval: 1,
   progressSources: {
     level: { enabled: false, multiplier: 1 },
@@ -223,19 +291,12 @@ export const DEFAULT_STATION_CONFIG = Object.freeze({
   requiredTool: null,
   recipes: [],
   modifiers: [],
-  rollTable: [
-    { id: "default-natural-1", enabled: true, minimum: 1, maximum: 1, label: "Katastrophe!", addition: 0, multiplier: 1, rewardAddition: 0, rewardMultiplier: 1, actorValueChange: -3, natural1: true, natural20: false },
-    { id: "default-1-5", minimum: 1, maximum: 5, label: "Pfusch!", addition: 0, multiplier: 1, rewardAddition: 1, rewardMultiplier: 1, actorValueChange: -1, natural1: false, natural20: false },
-    { id: "default-6-10", minimum: 6, maximum: 10, label: "Mäßig.", addition: 0, multiplier: 1, rewardAddition: 10, rewardMultiplier: 1, actorValueChange: 0, natural1: false, natural20: false },
-    { id: "default-11-15", minimum: 11, maximum: 15, label: "Routine.", addition: 0, multiplier: 1, rewardAddition: 20, rewardMultiplier: 1, actorValueChange: 1, natural1: false, natural20: false },
-    { id: "default-16-20", minimum: 16, maximum: 20, label: "Gelungen!", addition: 0, multiplier: 1, rewardAddition: 50, rewardMultiplier: 1, actorValueChange: 2, natural1: false, natural20: false },
-    { id: "default-21-25", minimum: 21, maximum: 25, label: "Erfolgreich!", addition: 0, multiplier: 1, rewardAddition: 80, rewardMultiplier: 1, actorValueChange: 3, natural1: false, natural20: false },
-    { id: "default-26-30", minimum: 26, maximum: 30, label: "Außerordentlich!", addition: 0, multiplier: 1, rewardAddition: 100, rewardMultiplier: 1, actorValueChange: 4, natural1: false, natural20: false },
-    { id: "default-31-plus", minimum: 31, maximum: null, label: "Meisterlich!", addition: 0, multiplier: 1, rewardAddition: 150, rewardMultiplier: 1, actorValueChange: 5, natural1: false, natural20: false },
-    { id: "default-natural-20", enabled: true, minimum: 20, maximum: 20, label: "Legendär!", addition: 0, multiplier: 1, rewardAddition: 200, rewardMultiplier: 1, actorValueChange: 10, natural1: false, natural20: true }
-  ],
+  rollTable: [],
+  rollTablePreset: "",
   actorValue: {
     enabled: false,
+    scope: "station",
+    category: "",
     key: "station-value",
     label: "",
     defaultValue: 0,
@@ -252,19 +313,23 @@ export const DEFAULT_PROJECT_CONFIG = Object.freeze({
   categories: [],
   requiredProgress: 1,
   repeatable: true,
+  collaborative: false,
   completionCheck: { enabled: false, dc: 10, retryDowntime: 1 },
   allowedChecks: [],
   requiredTools: [],
   completionCosts: [],
   rewards: [],
+  characterRewards: [],
   rollTable: [],
+  rollTablePreset: "",
   conditions: []
 });
 
 export const PROJECT_TEMPLATES = Object.freeze([
-  { id: "crafting", nameKey: "DOWNTIME_MANAGER.Project.Templates.Crafting.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Crafting.Description", img: "icons/tools/smithing/hammer-sledge-steel-grey.webp", config: { categories: ["crafting"], requiredProgress: 10, repeatable: true } },
-  { id: "research", nameKey: "DOWNTIME_MANAGER.Project.Templates.Research.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Research.Description", img: "icons/sundries/books/book-open-purple.webp", config: { categories: ["research"], requiredProgress: 20, repeatable: false, completionCheck: { enabled: true, dc: 15, retryDowntime: 1 } } },
-  { id: "work", nameKey: "DOWNTIME_MANAGER.Project.Templates.Work.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Work.Description", img: "icons/skills/trades/construction-carpentry-hammer.webp", config: { categories: ["work"], requiredProgress: 5, repeatable: true, rollTable: DEFAULT_STATION_CONFIG.rollTable.map(row => ({ ...row })) } },
-  { id: "training", nameKey: "DOWNTIME_MANAGER.Project.Templates.Training.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Training.Description", img: "icons/skills/melee/swords-triple-orange.webp", config: { categories: ["training"], requiredProgress: 30, repeatable: false, completionCheck: { enabled: true, dc: 15, retryDowntime: 2 } } },
-  { id: "recovery", nameKey: "DOWNTIME_MANAGER.Project.Templates.Recovery.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Recovery.Description", img: "icons/magic/life/heart-cross-strong-flame-green.webp", config: { categories: ["recovery"], requiredProgress: 5, repeatable: true } }
+  { id: "crafting", nameKey: "DOWNTIME_MANAGER.Project.Templates.Crafting.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Crafting.Description", img: "icons/tools/smithing/hammer-sledge-steel-grey.webp", config: { categories: [], requiredProgress: 10, repeatable: false, collaborative: true } },
+  { id: "research", nameKey: "DOWNTIME_MANAGER.Project.Templates.Research.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Research.Description", img: "icons/sundries/books/book-open-purple.webp", config: { categories: ["research"], requiredProgress: 100, repeatable: false, collaborative: true, completionCheck: { enabled: false, dc: 15, retryDowntime: 1 } } },
+  { id: "work", nameKey: "DOWNTIME_MANAGER.Project.Templates.Work.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Work.Description", img: "icons/skills/trades/construction-carpentry-hammer.webp", config: { categories: ["working"], requiredProgress: 5, repeatable: true } },
+  { id: "training", nameKey: "DOWNTIME_MANAGER.Project.Templates.Training.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Training.Description", img: "icons/skills/trades/academics-study-reading-book.webp", config: { categories: ["training"], requiredProgress: 600, repeatable: false, completionCheck: { enabled: true, dc: 15, retryDowntime: 1 } } },
+  { id: "carousing", nameKey: "DOWNTIME_MANAGER.Project.Templates.Carousing.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Carousing.Description", img: "icons/environment/settlement/tavern.webp", config: { categories: ["carousing"], requiredProgress: 5, repeatable: true } },
+  { id: "recovery", nameKey: "DOWNTIME_MANAGER.Project.Templates.Recovery.Name", descriptionKey: "DOWNTIME_MANAGER.Project.Templates.Recovery.Description", img: "icons/magic/life/heart-cross-strong-flame-green.webp", config: { categories: [], requiredProgress: 5, repeatable: true } }
 ]);

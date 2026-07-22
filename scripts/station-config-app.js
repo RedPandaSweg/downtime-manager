@@ -1,15 +1,19 @@
-import { DEFAULT_VALUE_TIERS, FLAGS, MODULE_ID, PROJECT_TEMPLATES } from "./constants.js";
+import { DEFAULT_VALUE_TIERS, FLAGS, MODULE_ID, PROJECT_TEMPLATES, ROLL_TABLE_PRESETS } from "./constants.js";
 import { getSystemAdapter } from "./system-adapter.js";
 import { createRecipeFromBaseItem } from "./recipe-service.js";
 import { StationEngine } from "./station-engine.js";
 import {
+  addCategorySelection,
+  categorySelectionView,
+  configuredCategories,
   defaultStationData,
   getActiveCrafter,
   getStationData,
   itemIdentifier,
   isRecipeItem,
   parseCategories,
-  recipeData
+  recipeData,
+  removeCategorySelection
 } from "./utils.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -44,7 +48,9 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
       toggleChecks: StationConfigApp.#toggleChecks,
       resetRollTable: StationConfigApp.#resetRollTable,
       resetValueTiers: StationConfigApp.#resetValueTiers,
-      loadValueTierPreset: StationConfigApp.#loadValueTierPreset
+      loadValueTierPreset: StationConfigApp.#loadValueTierPreset,
+      addCategorySelection: StationConfigApp.#addCategorySelection,
+      removeCategorySelection: StationConfigApp.#removeCategorySelection
     }
   };
 
@@ -60,7 +66,7 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
   async _prepareContext() {
     const station = getStationData(this.actor);
     station.actorValue.tiers = StationEngine.normalizeValueTiers(station.actorValue.tiers);
-    station.categoriesText = station.categories.join(", ");
+    const categoryPicker = categorySelectionView(station.categories);
     const recipes = [];
     for (const uuid of station.recipes) {
       const item = await fromUuid(uuid);
@@ -93,17 +99,32 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
     })).filter(group => group.checks.length);
     const exampleActor = getActiveCrafter();
     const exampleCheck = station.allowedChecks[0] ?? null;
+    const storedTool = station.requiredTool;
+    const toolDocument = storedTool?.uuid ? await fromUuid(storedTool.uuid) : null;
+    const tool = storedTool ? {
+      ...storedTool,
+      name: storedTool.name ?? toolDocument?.name ?? storedTool.identifier ?? storedTool.uuid,
+      img: storedTool.img ?? toolDocument?.img ?? "icons/svg/item-bag.svg"
+    } : null;
     return {
       actorName: this.actor.name,
       station,
+      categoryPicker,
+      characterValueCategories: categoryPicker.selected.map(category => ({ ...category, selected: category.id === station.actorValue.category })),
       recipes,
       checkGroups,
-      tool: station.requiredTool,
+      tool,
       exampleSources: StationEngine.actorProgressSources(exampleActor, exampleCheck),
       formulaExampleLabel: exampleActor
         ? game.i18n.format("DOWNTIME_MANAGER.Station.FormulaExampleActor", { actor: exampleActor.name })
         : game.i18n.localize("DOWNTIME_MANAGER.Station.FormulaExampleNone"),
       capabilities: adapter.capabilities,
+      rollTablePresets: ROLL_TABLE_PRESETS.map(preset => ({
+        id: preset.id,
+        labelKey: preset.labelKey,
+        descriptionKey: preset.descriptionKey,
+        selected: preset.id === station.rollTablePreset
+      })),
       projectTemplates: PROJECT_TEMPLATES.map(template => ({
         id: template.id,
         name: game.i18n.localize(template.nameKey)
@@ -120,13 +141,24 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
         const options = this.element.querySelector("[data-actor-value-options]");
         if (options) options.hidden = !event.currentTarget.checked;
       });
+    this.element.querySelector('[name="actorValue.scope"]')?.addEventListener("change", () => this.#updateCharacterValueScope());
+    this.element.querySelector('[name="rollTablePreset"]')?.addEventListener("change", event => this.#applyRollTablePreset(event));
     this.element.addEventListener("input", () => {
       this.#updateConditionalSections();
       this.#updateFormulaPreview();
     });
     this.#updateConditionalSections();
+    this.#updateCharacterValueScope();
     this.#updateFormulaPreview();
     this.#restoreView();
+  }
+
+  #updateCharacterValueScope() {
+    const categoryMode = this.element.querySelector('[name="actorValue.scope"]')?.value === "category";
+    const key = this.element.querySelector("[data-character-value-key]");
+    const category = this.element.querySelector("[data-character-value-category]");
+    if (key) key.hidden = categoryMode;
+    if (category) category.hidden = !categoryMode;
   }
 
   #updateConditionalSections() {
@@ -215,7 +247,7 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
     station.enabled = checked("enabled");
     station.displayName = String(value("displayName") ?? "").trim();
     station.description = String(value("description") ?? "");
-    station.categories = parseCategories(value("categories"));
+    station.categories = parseCategories(Array.from(this.element.querySelectorAll('[name="categories"]'), input => input.value));
     station.baseProgress = numberOr(value("baseProgress"));
     station.requiresRoll = checked("requiresRoll");
     station.progressSources = {
@@ -260,9 +292,12 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
       natural1: Boolean(row.natural1),
       natural20: Boolean(row.natural20)
     }));
+    station.rollTablePreset = String(value("rollTablePreset") ?? "").trim();
     station.actorValue = {
       ...station.actorValue,
       enabled: checked("actorValue.enabled"),
+      scope: value("actorValue.scope") === "category" ? "category" : "station",
+      category: String(value("actorValue.category") ?? ""),
       key: String(value("actorValue.key") ?? "").trim(),
       label: String(value("actorValue.label") ?? "").trim(),
       defaultValue: numberOr(value("actorValue.defaultValue")),
@@ -295,7 +330,7 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
   async #dropTool(event) {
     event.preventDefault();
-    const data = TextEditor.getDragEventData(event);
+    const data = foundry.applications.ux.TextEditor.implementation.getDragEventData(event);
     const item = data.type === "Item" ? await Item.implementation.fromDropData(data) : null;
     if (!item) return ui.notifications.warn(game.i18n.localize("DOWNTIME_MANAGER.Errors.DropItem"));
     await this.#persistDraft(station => {
@@ -310,7 +345,7 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
   async #dropProject(event) {
     event.preventDefault();
-    const data = TextEditor.getDragEventData(event);
+    const data = foundry.applications.ux.TextEditor.implementation.getDragEventData(event);
     const item = data.type === "Item" ? await Item.implementation.fromDropData(data) : null;
     if (!item?.uuid) return ui.notifications.warn(game.i18n.localize("DOWNTIME_MANAGER.Errors.DropItem"));
     await this.#persistDraft(station => {
@@ -403,10 +438,20 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
 
   static async #resetRollTable() {
+    const presetId = String(this.element.querySelector('[name="rollTablePreset"]')?.value ?? "").trim();
+    const preset = ROLL_TABLE_PRESETS.find(entry => entry.id === presetId);
     await this.#persistDraft(station => {
-      station.rollTable = foundry.utils.deepClone(
-        defaultStationData().rollTable
-      );
+      station.rollTable = preset?.rollTable ? foundry.utils.deepClone(preset.rollTable) : [];
+      station.rollTablePreset = presetId;
+    });
+  }
+
+  async #applyRollTablePreset(event) {
+    const presetId = String(this.element.querySelector('[name="rollTablePreset"]')?.value ?? "").trim();
+    const preset = ROLL_TABLE_PRESETS.find(entry => entry.id === presetId);
+    await this.#persistDraft(station => {
+      station.rollTablePreset = presetId;
+      if (preset?.rollTable) station.rollTable = foundry.utils.deepClone(preset.rollTable);
     });
   }
 
@@ -459,8 +504,11 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
   static async #submit() {
     this.#captureView();
     const station = this.#readStation();
-    if (station.actorValue.enabled && !station.actorValue.key) {
+    if (station.actorValue.enabled && station.actorValue.scope === "station" && !station.actorValue.key) {
       return ui.notifications.error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ActorValueKeyMissing"));
+    }
+    if (station.actorValue.enabled && station.actorValue.scope === "category" && !station.actorValue.category) {
+      return ui.notifications.error(game.i18n.localize("DOWNTIME_MANAGER.Errors.CharacterValueCategoryMissing"));
     }
     if ((station.requiresRoll || station.progressSources.checkProficiency.enabled) && !station.allowedChecks.length) {
       return ui.notifications.error(game.i18n.localize("DOWNTIME_MANAGER.Errors.CheckRequired"));
@@ -481,4 +529,6 @@ export class StationConfigApp extends HandlebarsApplicationMixin(ApplicationV2) 
     ui.notifications.info(game.i18n.localize("DOWNTIME_MANAGER.Notifications.StationSaved"));
     this.render();
   }
+  static #addCategorySelection(event, target) { addCategorySelection(target); }
+  static #removeCategorySelection(event, target) { removeCategorySelection(target); }
 }

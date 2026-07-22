@@ -4,7 +4,7 @@
     <div><h1>{{localize "DOWNTIME_MANAGER.Help.Heading"}}</h1><p>{{introduction}}</p></div>
   </header>
   <nav class="sc-help-nav" aria-label="{{localize 'DOWNTIME_MANAGER.Help.Navigation'}}">
-    {{#each sections}}<a href="#help-{{key}}"><i class="{{icon}}"></i> {{title}}</a>{{/each}}
+    {{#each sections}}<button type="button" data-action="scrollToSection" data-section="{{key}}"><i class="{{icon}}"></i> {{title}}</button>{{/each}}
   </nav>
   <div class="sc-help-sections">
     {{#each sections}}

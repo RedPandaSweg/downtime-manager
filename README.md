@@ -4,22 +4,23 @@ Downtime Manager is a configurable downtime, project, crafting, and session-rewa
 
 Game Masters can build reusable downtime stations, define projects with costs and rewards, distribute downtime through sessions or direct grants, and monitor character progress from a central dashboard. Players spend their characters' downtime on the projects available at a station.
 
-> **Project status:** Pre-1.0 development release. The module is usable, but public release hardening and broader system support are still in progress.
+> **Release status:** Version 1.0.0. The core module is release-ready for Foundry VTT 13; system-specific automation beyond Black Flag requires a compatible adapter.
 
 ## Features
 
 - Actor-based downtime stations with their own name, description, availability, and optional required tool
-- Configurable progress formulas using base progress, character level, proficiency bonus, check proficiency or expertise, modifiers, and station-specific character values
+- Configurable progress formulas using base progress, character level, proficiency bonus, check proficiency or expertise, modifiers, and station/category-scoped character values
 - Optional system-native checks at configurable intervals
 - Result tables with fixed Natural 1 and Natural 20 rows, numeric ranges, progress modifiers, reward modifiers, and station-value changes
 - World-level and personal downtime projects stored as Items
-- Project ingredients, required tools, completion costs, Item rewards, repeatability, and optional completion checks
+- Project ingredients, required tools, completion costs, Item and character rewards, repeatability, collaborative progress, and optional completion checks
 - Project-specific result tables that override the station table
 - Draft-based project creation: no Item is created until the editor is saved
 - Project library for creating, editing, reviewing, and safely deleting projects independently of a station
-- Built-in project templates for crafting, research, work, training, and recovery
+- Built-in project templates for crafting, research, work, training, carousing, and recovery
+- Reusable station presets for work, research, training, social, crafting, and recovery stations
 - GM dashboard for active progress, pending checks, completed projects, cancellation, and direct downtime grants
-- Session manager with level-based Item rewards, optional milestones, history, and player selection
+- Session manager with level-based Item rewards, optional milestones, history, and folder-filtered player selection
 - Weekly or monthly passive downtime for characters who miss sessions
 - Redeemable downtime Items with native system-use integration where supported
 - Integrated English and German help page
@@ -51,16 +52,16 @@ For a manual installation:
 
 ## GM quick start
 
-1. Open **Game Settings → Configure Settings → Module Settings → Downtime Manager → Default Items**.
-2. Drop a valid Item into **Project base Item**. New project Items and templates copy this document so they use a type supported by the active game system.
-3. Optionally configure the default cost Item.
-4. Open **Project Library** from the module settings or from the Downtime Overview.
-5. Create a blank project or choose a template, configure at least one reward Item, and save it.
-6. Open an Actor that should act as a station and use the hammer control in its sheet header to make it a downtime station.
-7. Configure the station and assign projects under **Public Projects**.
+1. Open **Game Settings → Configure Settings → Module Settings → Downtime Manager Configuration**.
+2. Set a **Project base Item**. This ordinary Item is copied for every new project and supplies the system-supported Item type and native data; downtime rules are added in the project editor.
+3. Optionally set the default cost Item.
+4. Import a station preset or use the hammer control in an Actor sheet header to turn that Actor into a downtime station.
+5. Configure the station, then create a blank project or template under **Public Projects**. Projects created there are assigned to the station automatically when saved.
+6. Configure the project's goal, prerequisites, costs, and Item or character rewards.
+7. Optionally restrict player selection through **Player Actor Folders**. The selected folder includes all subfolders; with no selection, all player characters are available.
 8. Grant downtime from the Downtime Overview or Session Manager.
 
-The complete in-game guide is available under **Module Settings → Downtime Manager → Introduction and Help**.
+The complete in-game guide is available at the top of **Module Settings → Introduction and Help**.
 
 ## Player workflow
 
@@ -70,7 +71,9 @@ The complete in-game guide is available under **Module Settings → Downtime Man
 4. Invest available downtime.
 5. Resolve a check when the station requests one.
 6. If configured, pass the project's completion check after reaching its progress target.
-7. On success, the module consumes completion costs and grants the configured Item rewards.
+7. On success, the module consumes completion costs and grants the configured Item and character rewards.
+
+A GM who wants to open a station as a user selects that user's character token, holds **Shift**, and then opens the station.
 
 ## Stations
 
@@ -98,6 +101,8 @@ Project configuration can include:
 - ingredients consumed when the project starts;
 - costs consumed only on successful completion;
 - one or more Item rewards;
+- character rewards that modify supported actor values;
+- optional collaborative progress shared by multiple participants;
 - a project-specific result table;
 - an optional completion check with a DC and downtime cost for retries.
 
@@ -111,7 +116,7 @@ GMs can open the **Downtime Manager** from its own control group at the bottom o
 
 Downtime can enter a character's balance in four ways:
 
-- **Direct downtime:** a GM grants a flat amount to selected characters or everyone from the dashboard.
+- **Direct downtime:** a GM grants a flat amount to selected or all included player characters from the dashboard.
 - **Session rewards:** configured Item rewards can include downtime Items for each character level.
 - **Passive downtime:** non-participants accumulate a configurable share of their level's downtime reward during a weekly or monthly period.
 - **Redeemable Items:** an owned Item grants its configured downtime when used or redeemed.
@@ -126,6 +131,7 @@ The Session Manager supports:
 - reward multipliers;
 - optional Journal history;
 - weekly or monthly passive-downtime accounting.
+- an optional root Actor folder filter, including all subfolders, for session and direct-downtime selection.
 
 When session history is disabled, a title and description are optional and the session does not need to be saved before rewards are distributed.
 

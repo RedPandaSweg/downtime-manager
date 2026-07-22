@@ -86,7 +86,11 @@ export class ProjectLibraryApp extends HandlebarsApplicationMixin(ApplicationV2)
   static async #deleteProject(event, target) {
     const item = await fromUuid(target.dataset.uuid);
     if (!item || !isRecipeItem(item)) return;
-    const stations = Array.from(game.actors).filter(actor => isStation(actor) && getStationData(actor).recipes.includes(item.uuid));
+    const stations = Array.from(game.actors).filter(actor => {
+      if (!isStation(actor)) return false;
+      const shared = actor.getFlag(MODULE_ID, FLAGS.SHARED_PROJECTS);
+      return getStationData(actor).recipes.includes(item.uuid) || (Array.isArray(shared) && shared.some(state => state.projectUuid === item.uuid));
+    });
     const affectedActors = Array.from(game.actors).filter(actor => {
       const states = actor.getFlag(MODULE_ID, FLAGS.PROJECTS);
       return Array.isArray(states) && states.some(state => (state.projectUuid ?? state.recipeUuid) === item.uuid);
@@ -105,6 +109,8 @@ export class ProjectLibraryApp extends HandlebarsApplicationMixin(ApplicationV2)
       const station = getStationData(stationActor);
       station.recipes = station.recipes.filter(uuid => uuid !== item.uuid);
       await stationActor.setFlag(MODULE_ID, FLAGS.STATION, station);
+      const shared = stationActor.getFlag(MODULE_ID, FLAGS.SHARED_PROJECTS);
+      if (Array.isArray(shared)) await stationActor.setFlag(MODULE_ID, FLAGS.SHARED_PROJECTS, shared.filter(state => state.projectUuid !== item.uuid));
     }
     for (const actor of affectedActors) {
       const states = actor.getFlag(MODULE_ID, FLAGS.PROJECTS) ?? [];

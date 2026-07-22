@@ -15,12 +15,12 @@ function pathNumber(object, paths, fallback = 0) {
 }
 
 function identifier(item) {
-  return String(item?.system?.identifier?.value ?? item?.system?.identifier ?? item?.system?.slug ?? item?.name ?? "").trim().toLowerCase();
+  return String(item?.system?.identifier?.value ?? item?.system?.identifier ?? item?.system?.slug ?? item?.identifier ?? item?.name ?? "").trim().toLowerCase();
 }
 
 export class GenericSystemAdapter {
   id = "generic";
-  capabilities = Object.freeze({ checks: false, actorSources: false, currency: false, itemPrices: false, downtimeItems: false });
+  capabilities = Object.freeze({ checks: false, actorSources: false, currency: false, itemPrices: false, downtimeItems: false, characterRewards: false });
 
   getCheckDefinitions() { return []; }
   async rollCheck() { throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.UnsupportedSystemCheck")); }
@@ -36,15 +36,20 @@ export class GenericSystemAdapter {
   getGold() { return 0; }
   getDefaultGoldItemUuid() { return ""; }
   isGoldItem() { return false; }
+  isCurrencyItem() { return false; }
+  getCurrencyValue() { return 0; }
   canAddGold(_actor, amount) { return Number(amount) <= 0; }
   async spendGold(actor, amount) { return Number(amount) <= 0; }
   async addGold(actor, amount) { return Number(amount) <= 0; }
+  getCharacterRewardOptions() { return {}; }
+  hasCharacterReward() { return false; }
+  async grantCharacterReward() { return false; }
   registerHooks() {}
 }
 
 export class BlackFlagSystemAdapter extends GenericSystemAdapter {
   id = "black-flag";
-  capabilities = Object.freeze({ checks: true, actorSources: true, currency: true, itemPrices: true, downtimeItems: true });
+  capabilities = Object.freeze({ checks: true, actorSources: true, currency: true, itemPrices: true, downtimeItems: true, characterRewards: true });
 
   getCheckDefinitions() {
     const tools = globalThis.CONFIG?.BlackFlag?.tools?.localizedOptions ?? [];
@@ -52,6 +57,69 @@ export class BlackFlagSystemAdapter extends GenericSystemAdapter {
   }
   getDefaultGoldItemUuid() { return "Compendium.black-flag.currencies.Item.eWMYzM5UVZUDIqtg"; }
   isGoldItem(item) { return identifier(item) === "gp"; }
+  isCurrencyItem(item) { return COIN_IDENTIFIERS.includes(identifier(item)); }
+  getCurrencyValue(item) { return (COIN_VALUE_CP[identifier(item)] ?? 0) / 100; }
+
+  #flattenOptions(configuration, prefix = "") {
+    const options = [];
+    for (const [key, entry] of Object.entries(configuration ?? {})) {
+      const id = prefix ? `${prefix}:${key}` : key;
+      if (entry?.children) options.push(...this.#flattenOptions(entry.children, id));
+      else {
+        const label = entry?.label ?? entry?.localization ?? key;
+        const canonicalLabel = String(label).split(".").map((part, index) => {
+          if (index === 0 && part.toLowerCase() === "bf") return "BF";
+          return part ? `${part[0].toUpperCase()}${part.slice(1)}` : part;
+        }).join(".");
+        const candidates = [String(label), canonicalLabel, `${canonicalLabel}[one]`];
+        const localized = candidates.map(candidate => game.i18n.localize(candidate))
+          .find((value, index) => value !== candidates[index]);
+        const fallback = String(key).replace(/[-_]/g, " ").replace(/\b\w/g, character => character.toUpperCase());
+        options.push({ key: id, label: localized ?? fallback });
+      }
+    }
+    return options;
+  }
+
+  getCharacterRewardOptions() {
+    return {
+      language: this.#flattenOptions(CONFIG.BlackFlag?.languages),
+      skill: this.#flattenOptions(CONFIG.BlackFlag?.skills),
+      tool: this.#flattenOptions(CONFIG.BlackFlag?.tools),
+      weapon: this.#flattenOptions(CONFIG.BlackFlag?.weapons),
+      armor: this.#flattenOptions(CONFIG.BlackFlag?.armor)
+    };
+  }
+
+  hasCharacterReward(actor, reward) {
+    const key = String(reward?.key ?? "");
+    const type = String(reward?.type ?? "");
+    const rank = Math.max(1, Number(reward?.rank) || 1);
+    if (type === "language") return new Set(actor.system?.proficiencies?.languages?.value ?? []).has(key);
+    if (type === "weapon" || type === "armor") return new Set(actor.system?.proficiencies?.[`${type}s`]?.value ?? []).has(key);
+    if (type === "skill" || type === "tool") {
+      return Number(actor.system?.proficiencies?.[`${type}s`]?.[key]?.proficiency?.multiplier ?? 0) >= rank;
+    }
+    return false;
+  }
+
+  async grantCharacterReward(actor, reward) {
+    const options = this.getCharacterRewardOptions()[reward?.type] ?? [];
+    const key = String(reward?.key ?? "");
+    if (!options.some(option => option.key === key)) throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.CharacterRewardInvalid"));
+    if (this.hasCharacterReward(actor, reward)) return false;
+    const type = String(reward.type);
+    if (type === "language" || type === "weapon" || type === "armor") {
+      const path = type === "language" ? "system.proficiencies.languages.value" : `system.proficiencies.${type}s.value`;
+      const current = new Set(foundry.utils.getProperty(actor, path) ?? []);
+      current.add(key);
+      await actor.update({ [path]: Array.from(current) });
+      return true;
+    }
+    const rank = Math.min(2, Math.max(1, Number(reward.rank) || 1));
+    await actor.update({ [`system.proficiencies.${type}s.${key}.proficiency.multiplier`]: rank });
+    return true;
+  }
 
   async rollCheck(actor, check) {
     let rolls;
@@ -107,17 +175,36 @@ export class BlackFlagSystemAdapter extends GenericSystemAdapter {
   async #changeGold(actor, gold, errorKey) {
     if (!Number.isFinite(gold)) throw new Error(game.i18n.localize(`DOWNTIME_MANAGER.Errors.${errorKey}`));
     const entries = this.#coins(actor);
-    let copper = Math.round(this.getGold(actor) * 100 + gold * 100);
-    if (copper < 0) return false;
-    const updates = [];
-    for (const id of COIN_IDENTIFIERS) {
-      const entry = entries.find(candidate => candidate.id === id);
-      if (!entry) continue;
-      const quantity = Math.floor(copper / COIN_VALUE_CP[id]);
-      copper -= quantity * COIN_VALUE_CP[id];
-      updates.push({ _id: entry.item.id, ...this.quantityUpdate(entry.item, quantity) });
+    let remaining = Math.abs(Math.round(gold * 100));
+    if (gold < 0 && Math.round(this.getGold(actor) * 100) < remaining) return false;
+    const quantities = new Map(entries.map(entry => [entry.id, entry.quantity]));
+
+    // Spend existing denominations without re-normalizing the actor's complete purse.
+    // Smaller coins are consumed first; one larger coin is only broken when needed.
+    for (const id of [...COIN_IDENTIFIERS].reverse()) {
+      const value = COIN_VALUE_CP[id];
+      const used = Math.min(quantities.get(id) ?? 0, Math.floor(remaining / value));
+      quantities.set(id, (quantities.get(id) ?? 0) - used);
+      remaining -= used * value;
     }
-    if (copper !== 0) throw new Error(game.i18n.localize(`DOWNTIME_MANAGER.Errors.${gold < 0 ? "ExactChangeMissing" : "RewardCurrencyMissing"}`));
+    if (remaining > 0) {
+      const larger = [...COIN_IDENTIFIERS].reverse().find(id => COIN_VALUE_CP[id] > remaining && (quantities.get(id) ?? 0) > 0);
+      if (!larger) throw new Error(game.i18n.localize(`DOWNTIME_MANAGER.Errors.${gold < 0 ? "ExactChangeMissing" : "RewardCurrencyMissing"}`));
+      quantities.set(larger, quantities.get(larger) - 1);
+      let change = COIN_VALUE_CP[larger] - remaining;
+      for (const id of COIN_IDENTIFIERS.filter(id => COIN_VALUE_CP[id] < COIN_VALUE_CP[larger])) {
+        const entry = entries.find(candidate => candidate.id === id);
+        if (!entry) continue;
+        const added = Math.floor(change / COIN_VALUE_CP[id]);
+        quantities.set(id, (quantities.get(id) ?? 0) + added);
+        change -= added * COIN_VALUE_CP[id];
+      }
+      if (change !== 0) throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ExactChangeMissing"));
+      remaining = 0;
+    }
+    const updates = entries
+      .filter(entry => quantities.get(entry.id) !== entry.quantity)
+      .map(entry => ({ _id: entry.item.id, ...this.quantityUpdate(entry.item, quantities.get(entry.id)) }));
     if (updates.length) await actor.updateEmbeddedDocuments("Item", updates);
     return true;
   }

@@ -50,10 +50,10 @@ export class ProjectService {
     }
 
     const batches = Math.max(1, Math.floor(Number(batchQuantity) || 1));
-    if (!(definition.rewards ?? []).length) {
+    if (!(definition.rewards ?? []).length && !(definition.characterRewards ?? []).length) {
       throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.RewardRequired"));
     }
-    if (!ResourceService.has(actor, definition.ingredients ?? [], batches)) {
+    if (!(await ResourceService.has(actor, definition.ingredients ?? [], batches))) {
       throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ResourcesMissing"));
     }
     const startGold = round(Number(definition.goldCost ?? 0) * batches, 6);
@@ -188,7 +188,8 @@ export class ProjectService {
         )
       }));
       await RewardService.validateItems(rewardItems);
-      if (!ResourceService.has(actor, definition.completionCosts ?? [], state.batches)) {
+      RewardService.validateCharacterRewards(definition.characterRewards ?? []);
+      if (!(await ResourceService.has(actor, definition.completionCosts ?? [], state.batches))) {
         throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.CompletionCostsMissing"));
       }
       await ResourceService.spend(actor, definition.completionCosts ?? [], state.batches);
@@ -229,12 +230,17 @@ export class ProjectService {
         )
       }));
       rewards = await RewardService.grantItems(actor, rewardItems);
+      const characterRewards = await RewardService.grantCharacterRewards(actor, definition.characterRewards ?? []);
       rewardSummary = rewardItems
         .filter(reward => Number(reward.quantity ?? 0) > 0)
         .map((reward, index) => ({
           name: reward.name ?? rewards[index] ?? reward.uuid,
           quantity: reward.quantity
         }));
+      rewardSummary.push(...characterRewards.map(reward => ({
+        name: reward.changed ? reward.label : game.i18n.format("DOWNTIME_MANAGER.Project.AlreadyKnown", { name: reward.label }),
+        quantity: reward.rank > 1 ? reward.rank : 1
+      })));
       await RewardService.changeStationValue(
         actor,
         stationActor,
@@ -287,7 +293,8 @@ export class ProjectService {
       quantity: StationEngine.calculateRewardQuantity(reward.quantity ?? 1, state.completionRow ?? {}, state.batches)
     }));
     await RewardService.validateItems(rewardItems);
-    if (!ResourceService.has(actor, definition.completionCosts ?? [], state.batches)) {
+    RewardService.validateCharacterRewards(definition.characterRewards ?? []);
+    if (!(await ResourceService.has(actor, definition.completionCosts ?? [], state.batches))) {
       throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.CompletionCostsMissing"));
     }
     const rolled = await StationEngine.roll(actor, check);
@@ -308,7 +315,9 @@ export class ProjectService {
       throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.CompletionCostsMissing"));
     }
     const rewardNames = await RewardService.grantItems(actor, rewardItems);
+    const characterRewards = await RewardService.grantCharacterRewards(actor, definition.characterRewards ?? []);
     const rewardSummary = rewardItems.filter(reward => Number(reward.quantity ?? 0) > 0).map((reward, index) => ({ name: reward.name ?? rewardNames[index] ?? reward.uuid, quantity: reward.quantity }));
+    rewardSummary.push(...characterRewards.map(reward => ({ name: reward.changed ? reward.label : game.i18n.format("DOWNTIME_MANAGER.Project.AlreadyKnown", { name: reward.label }), quantity: reward.rank > 1 ? reward.rank : 1 })));
     await RewardService.changeStationValue(actor, stationActor, station, Number(station.actorValue?.completionChange ?? 0));
     state.awaitingCompletionCheck = false;
     state.completionCheckFailed = false;
@@ -321,16 +330,16 @@ export class ProjectService {
     return { rolled, dc, success: true, retryCost, rewards: rewardNames, state };
   }
 
-  static async deactivate(actor, stationActor, projectUuid) {
+  static async cancel(actor, stationActor, projectUuid) {
     const states = this.get(actor);
-    const state = states.find(entry =>
+    const index = states.findIndex(entry =>
       entry.stationUuid === stationActor.uuid &&
       (entry.projectUuid === projectUuid || entry.recipeUuid === projectUuid)
     );
-    if (!state || state.completed || state.active === false) {
+    if (index < 0 || states[index].completed) {
       throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.ProjectNotActive"));
     }
-    state.active = false;
+    const [state] = states.splice(index, 1);
     await actor.setFlag(MODULE_ID, FLAGS.PROJECTS, states);
     return state;
   }

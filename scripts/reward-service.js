@@ -1,4 +1,5 @@
 import { FLAGS, MODULE_ID } from "./constants.js";
+import { getSystemAdapter } from "./system-adapter.js";
 import {
   getQuantity,
   quantityUpdate,
@@ -34,10 +35,37 @@ export class RewardService {
     }
   }
 
+  static validateCharacterRewards(rewards) {
+    if (!(rewards ?? []).length) return;
+    const adapter = getSystemAdapter();
+    if (!adapter.capabilities.characterRewards) throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.CharacterRewardsUnsupported"));
+    const options = adapter.getCharacterRewardOptions();
+    for (const reward of rewards) {
+      if (!(options[reward.type] ?? []).some(option => option.key === reward.key)) {
+        throw new Error(game.i18n.localize("DOWNTIME_MANAGER.Errors.CharacterRewardInvalid"));
+      }
+    }
+  }
+
+  static async grantCharacterRewards(actor, rewards) {
+    this.validateCharacterRewards(rewards);
+    const adapter = getSystemAdapter();
+    const options = adapter.getCharacterRewardOptions();
+    const granted = [];
+    for (const reward of rewards ?? []) {
+      const changed = await adapter.grantCharacterReward(actor, reward);
+      const label = options[reward.type]?.find(option => option.key === reward.key)?.label ?? reward.key;
+      granted.push({ type: reward.type, key: reward.key, label, rank: Number(reward.rank) || 1, changed });
+    }
+    return granted;
+  }
+
   static getStationValue(actor, stationActor, station) {
     if (!station.actorValue?.enabled) return 0;
     const values = actor.getFlag(MODULE_ID, FLAGS.STATION_VALUES) ?? {};
-    const stored = this.#stationValueBucket(values, stationActor)?.[station.actorValue?.key];
+    const stored = station.actorValue.scope === "category"
+      ? values.categoryValues?.[station.actorValue.category]
+      : this.#stationValueBucket(values, stationActor)?.[station.actorValue?.key];
     return Number.isFinite(Number(stored))
       ? Number(stored)
       : Number(station.actorValue?.defaultValue ?? 0);
@@ -48,13 +76,6 @@ export class RewardService {
     const values = foundry.utils.deepClone(
       actor.getFlag(MODULE_ID, FLAGS.STATION_VALUES) ?? {}
     );
-    const existing = this.#stationValueBucket(values, stationActor) ?? {};
-    values[stationActor.id] = { ...existing };
-    delete values[stationActor.uuid];
-    if (values.Actor?.[stationActor.id]) {
-      delete values.Actor[stationActor.id];
-      if (!Object.keys(values.Actor).length) delete values.Actor;
-    }
     const current = this.getStationValue(actor, stationActor, station);
     let next = current + Number(change ?? 0);
     const minimum = station.actorValue?.minimum;
@@ -65,9 +86,23 @@ export class RewardService {
     if (maximum !== null && maximum !== "" && Number.isFinite(Number(maximum))) {
       next = Math.min(Number(maximum), next);
     }
-    values[stationActor.id][station.actorValue.key] = round(next, 6);
+    if (station.actorValue.scope === "category") {
+      values.categoryValues = { ...(values.categoryValues ?? {}) };
+      values.categoryValues[station.actorValue.category] = round(next, 6);
+    } else {
+      const existing = this.#stationValueBucket(values, stationActor) ?? {};
+      values[stationActor.id] = { ...existing };
+      delete values[stationActor.uuid];
+      if (values.Actor?.[stationActor.id]) {
+        delete values.Actor[stationActor.id];
+        if (!Object.keys(values.Actor).length) delete values.Actor;
+      }
+      values[stationActor.id][station.actorValue.key] = round(next, 6);
+    }
     await actor.setFlag(MODULE_ID, FLAGS.STATION_VALUES, values);
-    return values[stationActor.id][station.actorValue.key];
+    return station.actorValue.scope === "category"
+      ? values.categoryValues[station.actorValue.category]
+      : values[stationActor.id][station.actorValue.key];
   }
 
   static async grantItems(actor, rewards) {
