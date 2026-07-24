@@ -2,10 +2,10 @@
   "id": "downtime-manager",
   "title": "Downtime Manager",
   "description": "A comprehensive downtime framework for Foundry VTT with configurable stations, individual and collaborative projects, crafting, character rewards, system-aware checks, session management, reusable presets, and GM oversight tools.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "compatibility": {
     "minimum": "13",
-    "verified": "13"
+    "verified": "14"
   },
   "authors": [
     {

@@ -10,6 +10,7 @@ import { getSystemAdapter, registerSystemAdapter } from "./system-adapter.js";
 import { SessionApp } from "./session-app.js";
 import { DowntimeItemApp } from "./downtime-item-app.js";
 import { StationPresetApp } from "./station-preset-app.js";
+import { playerCharacters, sessionProgress, SessionService } from "./session-service.js";
 import { registerSharedProjectSocket } from "./shared-project-socket.js";
 import { downtimeItemData, DowntimeItemService } from "./downtime-item-service.js";
 import { addHeaderControl, defaultStationData, isRecipeItem, isStation } from "./utils.js";
@@ -118,6 +119,7 @@ Hooks.once("init", async () => {
   });
 
   game.settings.register(MODULE_ID, SETTINGS.ACTIVE_SESSION, { scope: "world", config: false, type: Object, default: {} });
+  game.settings.register(MODULE_ID, SETTINGS.LAST_SESSION_RESULT, { scope: "world", config: false, type: Object, default: {} });
   game.settings.register(MODULE_ID, SETTINGS.SESSION_REWARDS, { scope: "world", config: false, type: Object, default: createDefaultSessionRewards(getSystemAdapter().getDefaultGoldItemUuid()) });
   game.settings.register(MODULE_ID, SETTINGS.SESSION_HISTORY_JOURNAL, { scope: "world", config: false, type: String, default: "" });
   game.settings.register(MODULE_ID, SETTINGS.SESSION_HISTORY_ENABLED, {
@@ -232,7 +234,7 @@ Hooks.once("ready", async () => {
   getSystemAdapter().registerHooks({
     redeemDowntimeItem: (item, options) => DowntimeItemService.redeem(item, options)
   });
-  game.downtimeManager = {
+  const api = {
     openStation,
     configureStation,
     openRecipeEditor,
@@ -243,8 +245,16 @@ Hooks.once("ready", async () => {
     openProjectLibrary,
     openStationPresets: () => game.user.isGM && new StationPresetApp().render(true),
     getSystemAdapter,
-    registerSystemAdapter
+    registerSystemAdapter,
+    getPlayerCharacters: () => playerCharacters(),
+    getCharacterProgress: actor => foundry.utils.deepClone(sessionProgress(actor)),
+    getActiveSession: () => foundry.utils.deepClone(game.settings.get(MODULE_ID, SETTINGS.ACTIVE_SESSION) ?? {}),
+    getLastSessionResult: () => foundry.utils.deepClone(game.settings.get(MODULE_ID, SETTINGS.LAST_SESSION_RESULT) ?? {}),
+    SessionService
   };
+  game.downtimeManager = api;
+  const module = game.modules.get(MODULE_ID);
+  if (module) module.api = api;
 });
 
 async function loadTemplates() {

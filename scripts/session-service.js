@@ -204,6 +204,8 @@ export class SessionService {
       const historyEnabled = game.settings.get(MODULE_ID, SETTINGS.SESSION_HISTORY_ENABLED);
       const page = historyEnabled ? await createHistoryPage(record) : null;
       await game.settings.set(MODULE_ID, SETTINGS.ACTIVE_SESSION, { ...active, status: "awarded", awardedAt: record.awardedAt, historyPageUuid: page?.uuid ?? null });
+      await game.settings.set(MODULE_ID, SETTINGS.LAST_SESSION_RESULT, record);
+      Hooks.callAll("downtimeManager.sessionCompleted", foundry.utils.deepClone(record));
       return record;
     } catch (error) {
       const current = game.settings.get(MODULE_ID, SETTINGS.ACTIVE_SESSION) ?? {};

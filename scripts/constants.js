@@ -20,6 +20,7 @@ export const SETTINGS = Object.freeze({
   STATION_CATEGORIES: "stationCategories",
   PLAYER_ACTOR_FOLDERS: "playerActorFolders",
   ACTIVE_SESSION: "activeSession",
+  LAST_SESSION_RESULT: "lastSessionResult",
   SESSION_REWARDS: "sessionRewards",
   SESSION_HISTORY_JOURNAL: "sessionHistoryJournal",
   SESSION_HISTORY_ENABLED: "sessionHistoryEnabled",
